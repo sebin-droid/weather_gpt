@@ -253,11 +253,11 @@ WeatherGPT is currently a proof-of-concept. Here's how it can evolve into a prod
 
 | Person | Responsibility |
 |--------|---------------|
-| Person 1 | Backend AI/Chat — LLM integration, `/chat` endpoint |
-| Person 2 | Frontend UI — Chat interface, HTML/CSS/JS |
-| Person 3 | Weather, Alerts & Climate — Weather APIs, alerts system |
-| Person 4 | Location & Maps — GIS, interactive map, geolocation |
-| Person 5 | Multilingual, Voice, Docker & Docs — Translation, voice I/O, deployment |
+| Sebin | Backend AI/Chat — LLM integration, `/chat` endpoint |
+| Lekshmi | Frontend UI — Chat interface, HTML/CSS/JS |
+| Shahid | Weather, Alerts & Climate — Weather APIs, alerts system |
+| Suryakiran | Location & Maps — GIS, interactive map, geolocation |
+| Sreehari | Multilingual, Voice, Docker & Docs — Translation, voice I/O, deployment |
 
 ---
 
@@ -267,6 +267,4 @@ This project was built for **Smart India Hackathon 2026** (Problem Statement SIH
 
 ---
 
-<p align="center">
-  Built with ❤️ for Smart India Hackathon 2026
-</p>
+
