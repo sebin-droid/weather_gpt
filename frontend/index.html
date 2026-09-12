@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeatherGPT</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Leaflet CSS for Person 4's map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="title-row">
+        <h1>🌦️ WeatherGPT</h1>
+        <div class="controls-top">
+          <select id="lang-select" aria-label="Select Language">
+            <option value="en">English</option>
+            <option value="ml">Malayalam (മലയാളം)</option>
+            <option value="hi">Hindi (हिन्दी)</option>
+          </select>
+        </div>
+      </div>
+      <p class="subtitle">Real-time local weather & agro-travel advisories</p>
+    </header>
+
+    <!-- Dynamic Extreme Weather Alert Banner -->
+    <div id="alert-banner" class="alert-banner hidden" role="alert"></div>
+
+    <!-- Main Chat Window -->
+    <div id="chat-window" class="chat-window">
+      <div class="msg bot">
+        👋 Hello! Ask me about the weather in any city (e.g., <em>"Will it rain in Kochi tomorrow?"</em>).
+      </div>
+    </div>
+
+    <!-- GIS Map Viewport (Populated by js/map.js) -->
+    <div id="map" class="map-viewport"></div>
+
+    <!-- Voice Control Area (Populated by js/voice.js) -->
+    <div id="voice-controls" class="voice-controls"></div>
+
+    <!-- Input Form -->
+    <form id="chat-form" class="input-row" onsubmit="return false;">
+      <input 
+        type="text" 
+        id="user-input" 
+        placeholder="Ask about weather, rainfall, or travel advice..." 
+        autocomplete="off"
+      />
+      <button type="submit" id="send-btn">Send</button>
+    </form>
+  </div>
+
+  <!-- Third-party Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- App Scripts -->
+  <script src="js/chat.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/voice.js"></script>
+</body>
+</html>
