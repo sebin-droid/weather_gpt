@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeatherGPT</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <div class="app">
+    <h1>🌦️ WeatherGPT</h1>
+
+    <select id="lang-select">
+      <option value="en">English</option>
+      <option value="ml">Malayalam</option>
+      <option value="hi">Hindi</option>
+    </select>
+
+    <div id="chat-window"></div>
+
+    <div id="alert-banner" class="hidden"></div>
+
+    <div id="map" style="height:250px; margin:10px 0;"></div>
+
+    <div id="voice-controls"></div>
+
+    <div class="input-row">
+      <input type="text" id="user-input" placeholder="Ask about the weather..." />
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/voice.js"></script>
+</body>
+</html>

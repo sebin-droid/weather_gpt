@@ -1,5 +1,10 @@
 from fastapi import FastAPI, HTTPException
-
+from fastapi.middleware.cors import CORSMiddleware
+from routers.chat import router as chat_router
+from routers.weather import router as weather_router
+from routers.alerts import router as alerts_router
+from routers.location import router as location_router
+from routers.translate import router as translate_router
 from services.location_service import get_location
 from services.weather_service import (
     get_current_weather,
@@ -13,6 +18,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(chat_router)
+app.include_router(weather_router)
+app.include_router(alerts_router)
+app.include_router(location_router)
+app.include_router(translate_router)
+
 
 # --------------------------------------------------
 # HOME
@@ -20,21 +39,19 @@ app = FastAPI(
 
 @app.get("/")
 def home():
-
     return {
         "message": "WeatherGPT Backend is Running!"
     }
 
 
 # --------------------------------------------------
-# CURRENT WEATHER BY COORDINATES
+# CURRENT WEATHER USING COORDINATES
 # --------------------------------------------------
 
 @app.get("/weather")
 def weather(latitude: float, longitude: float):
 
     try:
-
         weather_data = get_current_weather(
             latitude,
             longitude
@@ -47,7 +64,6 @@ def weather(latitude: float, longitude: float):
         }
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -55,7 +71,7 @@ def weather(latitude: float, longitude: float):
 
 
 # --------------------------------------------------
-# CURRENT WEATHER BY CITY
+# CURRENT WEATHER USING CITY NAME
 # --------------------------------------------------
 
 @app.get("/weather/city")
@@ -64,7 +80,6 @@ def weather_by_city(city: str):
     location = get_location(city)
 
     if location is None:
-
         raise HTTPException(
             status_code=404,
             detail="City not found"
@@ -91,7 +106,7 @@ def weather_by_city(city: str):
 
 
 # --------------------------------------------------
-# 7-DAY FORECAST BY CITY
+# 7 DAY FORECAST
 # --------------------------------------------------
 
 @app.get("/forecast")
@@ -100,7 +115,6 @@ def forecast(city: str):
     location = get_location(city)
 
     if location is None:
-
         raise HTTPException(
             status_code=404,
             detail="City not found"
