@@ -3,7 +3,6 @@ from fastapi import APIRouter, HTTPException
 from services.nlp_service import understand_query
 from services.location_service import get_location
 from services.weather_service import get_current_weather, get_forecast
-from services.llm_service import make_friendly_answer
 from services.translation_service import translate_text
 
 router = APIRouter()
@@ -30,28 +29,45 @@ def make_answer(query: dict, weather_data: dict, city: str, question: str) -> st
     if query["weather_variable"] == "humidity":
         return f"The current humidity in {city} is {weather_data['humidity']}%."
 
-    return make_friendly_answer(weather_data, city, question)
+    return (
+        f"In {city}, the current condition is {weather_data['condition']}, "
+        f"the temperature is {weather_data['temperature']} C, humidity is "
+        f"{weather_data['humidity']}%, precipitation is {weather_data['precipitation']} mm, "
+        f"and wind speed is {weather_data['wind_speed']} km/h."
+    )
 
 
 @router.get("/chat")
 def chat(question: str, lang: str = "en"):
-    query = understand_query(question)
+    processed_question = question
+    query = understand_query(processed_question)
 
+    # Step 3: Handle missing city (with translated response)
     if query["location"] is None:
-        return {"question": question, "message": "Please mention a city name."}
+        msg = "Please mention a city name."
+        if lang != "en":
+            msg = translate_text(msg, target_lang=lang)
+        return {"question": question, "message": msg}
 
+    # Step 4: Lookup location
     location = get_location(query["location"])
     if location is None:
-        raise HTTPException(status_code=404, detail="City not found")
+        err_msg = "City not found"
+        if lang != "en":
+            err_msg = translate_text(err_msg, target_lang=lang)
+        raise HTTPException(status_code=404, detail=err_msg)
 
+    # Step 5: Fetch forecast or current weather
     if query["intent"] == "forecast":
         weather_data = get_forecast(location["latitude"], location["longitude"])
     else:
         weather_data = get_current_weather(location["latitude"], location["longitude"])
 
-    answer_text = make_answer(query, weather_data, location["city"], question)
+    # Step 6: Construct answer and translate it back to user's selected language
+    answer_text = make_answer(query, weather_data, location["city"], processed_question)
 
-    answer_text = translate_text(answer_text, lang)
+    if lang != "en" and answer_text:
+        answer_text = translate_text(answer_text, target_lang=lang)
 
     return {
         "question": question,

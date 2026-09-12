@@ -11,7 +11,7 @@ Usage example:
     # result → "नमस्ते, आप कैसे हैं?"
 """
 
-from deep_translator import GoogleTranslator
+import re
 
 
 # ---------- Supported Languages ----------
@@ -34,6 +34,48 @@ SUPPORTED_LANGUAGES = {
     "or": "Odia",
     "as": "Assamese",
 }
+
+TRANSLATION_ERROR_MARKERS = (
+    "error 500",
+    "server error",
+    "that's an error",
+    "thatâs an error",
+)
+
+
+def fallback_translate(text: str, target_lang: str) -> str:
+    patterns = {
+        "ml": [
+            (r"Please mention a city name\.", "ദയവായി ഒരു നഗരത്തിന്റെ പേര് നൽകുക."),
+            (r"City not found", "നഗരം കണ്ടെത്താനായില്ല."),
+            (r"The current temperature in (.+) is ([\d.]+) C\.", r"\1 ലെ നിലവിലെ താപനില \2 C ആണ്."),
+            (r"In (.+), current precipitation is ([\d.]+) mm\.", r"\1 ലെ നിലവിലെ മഴയുടെ അളവ് \2 mm ആണ്."),
+            (r"The current wind speed in (.+) is ([\d.]+) km/h\.", r"\1 ലെ കാറ്റിന്റെ വേഗത \2 km/h ആണ്."),
+            (r"The current humidity in (.+) is ([\d.]+)%\.", r"\1 ലെ നിലവിലെ ഈർപ്പം \2% ആണ്."),
+            (r"In (.+), the current condition is (.+), the temperature is ([\d.]+) C, humidity is ([\d.]+)%, precipitation is ([\d.]+) mm, and wind speed is ([\d.]+) km/h\.", r"\1 ലെ നിലവിലെ കാലാവസ്ഥ \2 ആണ്. താപനില \3 C, ഈർപ്പം \4%, മഴ \5 mm, കാറ്റിന്റെ വേഗത \6 km/h ആണ്."),
+        ],
+        "hi": [
+            (r"Please mention a city name\.", "कृपया किसी शहर का नाम बताएं।"),
+            (r"City not found", "शहर नहीं मिला।"),
+            (r"The current temperature in (.+) is ([\d.]+) C\.", r"\1 में वर्तमान तापमान \2 C है।"),
+            (r"In (.+), current precipitation is ([\d.]+) mm\.", r"\1 में वर्तमान वर्षा \2 mm है।"),
+            (r"The current wind speed in (.+) is ([\d.]+) km/h\.", r"\1 में वर्तमान हवा की गति \2 km/h है।"),
+            (r"The current humidity in (.+) is ([\d.]+)%\.", r"\1 में वर्तमान आर्द्रता \2% है।"),
+            (r"In (.+), the current condition is (.+), the temperature is ([\d.]+) C, humidity is ([\d.]+)%, precipitation is ([\d.]+) mm, and wind speed is ([\d.]+) km/h\.", r"\1 में वर्तमान मौसम \2 है। तापमान \3 C, आर्द्रता \4%, वर्षा \5 mm और हवा की गति \6 km/h है।"),
+        ],
+    }
+    for pattern, replacement in patterns.get(target_lang, []):
+        if re.fullmatch(pattern, text):
+            return re.sub(pattern, replacement, text)
+    return text
+
+
+def matches_language(text: str, target_lang: str) -> bool:
+    if target_lang == "ml":
+        return bool(re.search(r"[\u0d00-\u0d7f]", text))
+    if target_lang == "hi":
+        return bool(re.search(r"[\u0900-\u097f]", text))
+    return True
 
 
 def get_supported_languages() -> dict:
@@ -72,6 +114,8 @@ def translate_text(text: str, target_lang: str, source_lang: str = "auto") -> st
         return text
 
     try:
+        from deep_translator import GoogleTranslator
+
         # Create a translator object that knows:
         #   - what language the text is in (source)
         #   - what language we want (target)
@@ -79,6 +123,10 @@ def translate_text(text: str, target_lang: str, source_lang: str = "auto") -> st
 
         # Actually perform the translation and return the result.
         translated = translator.translate(text)
+        if not translated or not matches_language(translated, target_lang) or any(
+            marker in translated.lower() for marker in TRANSLATION_ERROR_MARKERS
+        ):
+            raise RuntimeError("Translation service returned an error response")
         return translated
 
     except Exception as e:
@@ -86,4 +134,4 @@ def translate_text(text: str, target_lang: str, source_lang: str = "auto") -> st
         # print the error for debugging but return the original text
         # so the app keeps working.
         print(f"[Translation Error] {e}")
-        return text
+        return fallback_translate(text, target_lang)
