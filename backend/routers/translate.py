@@ -28,8 +28,8 @@ Example response (what the frontend gets back):
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-# Import our translation functions from File 1
-from backend.services.translation_service import translate_text, get_supported_languages
+# Import our translation functions from translation_service.py
+from services.translation_service import translate_text, get_supported_languages
 
 
 # ---------- Create the Router ----------
