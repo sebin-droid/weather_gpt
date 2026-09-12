@@ -17,8 +17,9 @@ def ask_llm(prompt: str):
             "Content-Type": "application/json"
         }
         data = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "user", "content": prompt}]
+            "model": "allam-2-7b",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 150
         }
         response = requests.post(GROQ_URL, headers=headers, json=data, timeout=10)
         response.raise_for_status()
