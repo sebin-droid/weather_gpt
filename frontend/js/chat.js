@@ -62,7 +62,12 @@ async function sendMessage(text) {
 
   } catch (err) {
     loadingDiv.remove();
-    addMessage("Could not connect to the server. Please check if the backend is running.", "bot");
+    const errorMessage = err.message.startsWith("Server returned HTTP 404")
+      ? "I could not find that city. Please check the spelling and try again."
+      : err.message.startsWith("Server returned HTTP")
+        ? "The weather service returned an error. Please try again shortly."
+        : "Could not connect to the server. Please check if the backend is running.";
+    addMessage(errorMessage, "bot");
     console.error("Fetch error:", err);
   }
 }

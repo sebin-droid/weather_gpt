@@ -130,9 +130,7 @@ def understand_query(question: str):
 def extract_location(question: str):
 
     patterns = [
-        r"in ([a-zA-Z\s]+)",
-        r"at ([a-zA-Z\s]+)",
-        r"for ([a-zA-Z\s]+)"
+        r"\b(?:in|at|for)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)*?)(?=\s+(?:today|tomorrow|next week)\b|[?!.,]|$)"
     ]
 
     for pattern in patterns:
@@ -146,13 +144,7 @@ def extract_location(question: str):
 
             location = match.group(1).strip()
 
-            location = re.sub(
-                r"\b(today|tomorrow|next week)\b",
-                "",
-                location
-            ).strip()
-
-            if location:
+            if location.lower() not in {"celsius", "centigrade", "fahrenheit"}:
 
                 return location.title()
 
