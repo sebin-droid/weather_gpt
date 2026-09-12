@@ -5,54 +5,75 @@ const userInput = document.getElementById("user-input");
 const sendBtn = document.getElementById("send-btn");
 const langSelect = document.getElementById("lang-select");
 const alertBanner = document.getElementById("alert-banner");
+const chatForm = document.getElementById("chat-form");
 
 function addMessage(text, sender) {
-  const div = document.createElement("div");
-  div.className = `msg ${sender}`;
-  div.textContent = text;
-  chatWindow.appendChild(div);
+  const msgDiv = document.createElement("div");
+  msgDiv.className = `msg ${sender}`;
+  msgDiv.textContent = text;
+  chatWindow.appendChild(msgDiv);
   chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  // Audio readout hook for Person 5's voice.js
   if (sender === "bot" && window.speakAnswer) {
     window.speakAnswer(text);
   }
+
+  return msgDiv;
 }
 
 async function sendMessage(text) {
-  addMessage(text, "user");
+  if (!text || !text.trim()) return;
+
+  const userText = text.trim();
+  addMessage(userText, "user");
   userInput.value = "";
+
+  // Temporary loading bubble
+  const loadingDiv = addMessage("Thinking...", "bot loading");
 
   try {
     const lang = langSelect.value;
-    const url = `${BACKEND_URL}/chat?question=${encodeURIComponent(text)}&lang=${lang}`;
-    const res = await fetch(url);
-    const data = await res.json();
+    const url = `${BACKEND_URL}/chat?question=${encodeURIComponent(userText)}&lang=${encodeURIComponent(lang)}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Server returned HTTP ${response.status}`);
+    }
 
-    addMessage(data.answer_text || data.message || "Sorry, I didn't understand.", "bot");
+    const data = await response.json();
+    loadingDiv.remove();
 
-    // Tell map.js where to put the pin (if location was found)
-    if (data.location && window.updateMap) {
+    const botReply = data.answer_text || data.message || "I could not find weather details for that location.";
+    addMessage(botReply, "bot");
+
+    // Integration Hook for Person 4 (Leaflet map pin)
+    if (data.location && typeof window.updateMap === "function") {
       window.updateMap(data.location);
     }
 
-    // Show alert banner if backend sent one
+    // Alert Banner Hook (from backend threshold alerts)
     if (data.alert) {
-      alertBanner.textContent = data.alert;
+      alertBanner.textContent = `⚠️ Alert: ${data.alert}`;
       alertBanner.classList.remove("hidden");
     } else {
       alertBanner.classList.add("hidden");
     }
 
   } catch (err) {
-    addMessage("Could not reach the server. Is the backend running?", "bot");
-    console.error(err);
+    loadingDiv.remove();
+    addMessage("Could not connect to the server. Please check if the backend is running.", "bot");
+    console.error("Fetch error:", err);
   }
 }
 
-sendBtn.addEventListener("click", () => {
-  const text = userInput.value.trim();
-  if (text) sendMessage(text);
+// Form event listeners
+chatForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  sendMessage(userInput.value);
 });
 
-userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendBtn.click();
+sendBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  sendMessage(userInput.value);
 });
