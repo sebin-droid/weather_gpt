@@ -1,10 +1,55 @@
-version: "3.9"
+# docker-compose.yml
+# ------------------
+# This file lets you start the entire backend with ONE command:
+#     docker-compose up --build
+#
+# What it does:
+#   - Builds the backend container using our Dockerfile.backend
+#   - Starts the FastAPI server on port 8000
+#   - Passes environment variables (like API keys) to the container
+#   - Automatically restarts the container if it crashes
+#
+# HOW TO USE:
+#   1. Open a terminal/command prompt
+#   2. Navigate to the project root folder (cd c:\Hackathon)
+#   3. Run:  docker-compose -f docker/docker-compose.yml up --build
+#   4. Open your browser and go to:  http://localhost:8000
+#   5. To stop:  press Ctrl+C in the terminal
+
+version: "3.8"
+
 services:
+
+  # ---------- Backend Service ----------
   backend:
+    # Build the container using our Dockerfile
     build:
-      context: ..
-      dockerfile: docker/Dockerfile.backend
+      context: ..              # The project root folder (one level up from /docker)
+      dockerfile: docker/Dockerfile.backend   # Path to our Dockerfile
+
+    # Name the container so it's easy to find
+    container_name: weathergpt-backend
+
+    # Map port 8000 inside the container to port 8000 on your computer
+    # Left side  = your computer's port
+    # Right side = container's port
     ports:
       - "8000:8000"
+
+    # Environment variables (settings passed into the container)
+    # Your teammates will set their API keys here.
+    # The .env file is a simple text file with KEY=VALUE pairs.
     env_file:
-      - ../backend/.env
+      - ../.env                # Load variables from .env file in project root
+
+    # If the container crashes, automatically restart it
+    restart: unless-stopped
+
+    # Health check — Docker will periodically check if the backend is alive
+    # by visiting http://localhost:8000/docs (FastAPI's built-in docs page).
+    # If it fails 3 times in a row, Docker marks the container as unhealthy.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s            # Check every 30 seconds
+      timeout: 10s             # Wait up to 10 seconds for a response
+      retries: 3               # Try 3 times before marking as unhealthy
