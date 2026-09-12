@@ -10,14 +10,16 @@ from services.weather_service import (
     get_current_weather,
     get_forecast
 )
-
+from routers.weather import router as weather_router
+from routers.alerts import router as alerts_router
 
 app = FastAPI(
     title="WeatherGPT API",
     description="AI-powered weather intelligence backend",
     version="1.0.0"
 )
-
+app.include_router(weather_router)
+app.include_router(alerts_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
