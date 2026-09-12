@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+﻿from fastapi import FastAPI, HTTPException
 
 from services.location_service import get_location
 from services.weather_service import (
@@ -6,12 +6,18 @@ from services.weather_service import (
     get_forecast
 )
 
+# --- Person 4: Location Router ---
+from routers.location import router as location_router
+
 
 app = FastAPI(
     title="WeatherGPT API",
     description="AI-powered weather intelligence backend",
     version="1.0.0"
 )
+
+# --- Person 4: Register Location Router ---
+app.include_router(location_router)
 
 
 # --------------------------------------------------
