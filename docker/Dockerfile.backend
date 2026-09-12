@@ -1,5 +1,46 @@
+# Dockerfile.backend
+# ------------------
+# This file is the "recipe" that tells Docker how to package
+# our Python backend into a container that anyone can run.
+#
+# Think of it as step-by-step instructions:
+#   1. Start with a computer that already has Python installed
+#   2. Copy our code into it
+#   3. Install all the libraries we need
+#   4. Start the backend server
+
+# ---------- Step 1: Start with Python ----------
+# This downloads a small Linux computer image that already has
+# Python 3.11 installed. "slim" means it's a lightweight version
+# (smaller download, faster to build).
 FROM python:3.11-slim
+
+# ---------- Step 2: Set the working directory ----------
+# This is like saying "cd /app" — all future commands will
+# run inside the /app folder.
 WORKDIR /app
-COPY backend/ /app/
-RUN pip install --no-cache-dir fastapi uvicorn requests python-dotenv deep-translator
+
+# ---------- Step 3: Copy requirements and install libraries ----------
+# We copy requirements.txt first (before the rest of the code)
+# because Docker is smart — if requirements.txt hasn't changed,
+# it will skip re-installing libraries (saves time).
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ---------- Step 4: Copy all our code ----------
+# Copy everything from the project folder into the container.
+COPY . .
+
+# ---------- Step 5: Tell Docker which port our app uses ----------
+# Our FastAPI backend will run on port 8000.
+# "EXPOSE" doesn't actually open the port — it's just a label
+# that says "hey, this app uses port 8000".
+EXPOSE 8000
+
+# ---------- Step 6: Start the server ----------
+# When the container starts, run this command:
+#   uvicorn = the server that runs FastAPI apps
+#   backend.main:app = look in backend/main.py for the "app" object
+#   --host 0.0.0.0 = accept connections from anywhere (not just localhost)
+#   --port 8000 = run on port 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
