@@ -14,7 +14,7 @@ function addMessage(text, sender) {
   chatWindow.appendChild(msgDiv);
   chatWindow.scrollTop = chatWindow.scrollHeight;
 
-  // Audio readout hook for Person 5's voice.js
+  // Audio readout hook from voice.js
   if (sender === "bot" && window.speakAnswer) {
     window.speakAnswer(text);
   }
@@ -47,7 +47,7 @@ async function sendMessage(text) {
     const botReply = data.answer_text || data.message || "I could not find weather details for that location.";
     addMessage(botReply, "bot");
 
-    // Integration Hook for Person 4 (Leaflet map pin)
+    // Integration Hook (Leaflet map pin)
     if (data.location && typeof window.updateMap === "function") {
       window.updateMap(data.location);
     }

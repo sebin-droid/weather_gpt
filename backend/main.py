@@ -7,6 +7,7 @@ from routers.weather import router as weather_router
 from routers.alerts import router as alerts_router
 from routers.location import router as location_router
 from routers.translate import router as translate_router
+from routers.speech import router as speech_router
 
 # Services
 from services.location_service import get_location
@@ -35,6 +36,7 @@ app.include_router(weather_router)
 app.include_router(alerts_router)
 app.include_router(location_router)
 app.include_router(translate_router)
+app.include_router(speech_router)
 
 
 # --------------------------------------------------
