@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+plan2.md
+.vscode/
+weather_gpt/
