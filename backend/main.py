@@ -1,25 +1,26 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+# Routers
 from routers.chat import router as chat_router
 from routers.weather import router as weather_router
 from routers.alerts import router as alerts_router
 from routers.location import router as location_router
 from routers.translate import router as translate_router
+
+# Services
 from services.location_service import get_location
 from services.weather_service import (
     get_current_weather,
     get_forecast
 )
-from routers.weather import router as weather_router
-from routers.alerts import router as alerts_router
 
 app = FastAPI(
     title="WeatherGPT API",
     description="AI-powered weather intelligence backend",
     version="1.0.0"
 )
-app.include_router(weather_router)
-app.include_router(alerts_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include all routers exactly ONCE
 app.include_router(chat_router)
 app.include_router(weather_router)
 app.include_router(alerts_router)
