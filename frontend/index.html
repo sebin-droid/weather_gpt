@@ -5,15 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WeatherGPT</title>
   <link rel="stylesheet" href="css/style.css">
-  <!-- Leaflet CSS for Person 4's map -->
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet Draw CSS (for NDVI polygon drawing) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
 </head>
 <body>
   <div class="app-container">
     <header class="app-header">
       <div class="title-row">
         <h1>🌦️ WeatherGPT</h1>
-        <div class="controls-top">
+      </div>
+      <p class="subtitle">AI-powered geospatial weather intelligence platform</p>
+    </header>
+
+    <!-- Tab Navigation -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="weather" onclick="switchTab('weather')">🌦️ Weather</button>
+      <button class="tab-btn" data-tab="route" onclick="switchTab('route')">🛣️ Route</button>
+      <button class="tab-btn" data-tab="vegetation" onclick="switchTab('vegetation')">🌱 Vegetation</button>
+    </div>
+
+    <!-- Dynamic Extreme Weather Alert Banner -->
+    <div id="alert-banner" class="alert-banner hidden" role="alert"></div>
+
+    <!-- TAB 1: Weather (existing chat interface + Person 1's voice & language features) -->
+    <div id="tab-weather" class="tab-content active">
+      <div id="chat-window" class="chat-window">
+        <div class="msg bot">
+          👋 Hello! Ask me about the weather in any city (e.g., <em>"Will it rain in Kochi tomorrow?"</em>).
+        </div>
+      </div>
+      <!-- Person 1's Voice (mic) + Multilanguage controls — always shown in Weather tab -->
+      <div class="weather-toolbar">
+        <div id="voice-controls" class="voice-controls"></div>
+        <div class="lang-wrap">
+          <label for="lang-select" class="lang-label">🌐 Language:</label>
           <select id="lang-select" aria-label="Select Language">
             <option value="en">English</option>
             <option value="ml">Malayalam (മലയാളം)</option>
@@ -21,42 +48,68 @@
           </select>
         </div>
       </div>
-      <p class="subtitle">Real-time local weather & agro-travel advisories</p>
-    </header>
-
-    <!-- Dynamic Extreme Weather Alert Banner -->
-    <div id="alert-banner" class="alert-banner hidden" role="alert"></div>
-
-    <!-- Main Chat Window -->
-    <div id="chat-window" class="chat-window">
-      <div class="msg bot">
-        👋 Hello! Ask me about the weather in any city (e.g., <em>"Will it rain in Kochi tomorrow?"</em>).
-      </div>
+      <!-- Chat Input -->
+      <form id="chat-form" class="input-row" onsubmit="return false;">
+        <input
+          type="text"
+          id="user-input"
+          placeholder="Ask about weather, rainfall, or travel advice..."
+          autocomplete="off"
+        />
+        <button type="submit" id="send-btn">Send</button>
+      </form>
     </div>
 
-    <!-- GIS Map Viewport (Populated by js/map.js) -->
+    <!-- TAB 2: Route Weather -->
+    <div id="tab-route" class="tab-content">
+      <div class="route-form">
+        <div class="route-inputs">
+          <input type="text" id="route-origin" placeholder="📍 From (e.g., Kanyakumari)" />
+          <span class="route-arrow">→</span>
+          <input type="text" id="route-dest" placeholder="📍 To (e.g., New Delhi)" />
+        </div>
+        <div class="route-options">
+          <input type="datetime-local" id="route-time" />
+          <button id="route-btn">🗺️ Get Route Weather</button>
+        </div>
+      </div>
+      <div id="route-loading" class="loading-panel hidden">⏳ Calculating route and fetching weather data...</div>
+      <div id="route-summary" class="route-summary hidden"></div>
+      <div id="route-zones" class="route-zones hidden"></div>
+    </div>
+
+    <!-- TAB 3: Vegetation (NDVI) -->
+    <div id="tab-vegetation" class="tab-content">
+      <div class="ndvi-controls">
+        <p>🌱 Draw a polygon on the map to analyze vegetation health using satellite data</p>
+        <div class="ndvi-options">
+          <input type="date" id="ndvi-date" />
+          <button id="ndvi-analyze-btn" disabled>📊 Analyze NDVI</button>
+          <button id="ndvi-clear-btn">🗑️ Clear</button>
+        </div>
+      </div>
+      <div id="ndvi-loading" class="loading-panel hidden">🛰️ Fetching satellite data...</div>
+      <div id="ndvi-results" class="ndvi-results hidden"></div>
+    </div>
+
+    <!-- GIS Map (always visible across all tabs) -->
     <div id="map" class="map-viewport"></div>
 
-    <!-- Voice Control Area (Populated by js/voice.js) -->
-    <div id="voice-controls" class="voice-controls"></div>
-
-    <!-- Input Form -->
-    <form id="chat-form" class="input-row" onsubmit="return false;">
-      <input 
-        type="text" 
-        id="user-input" 
-        placeholder="Ask about weather, rainfall, or travel advice..." 
-        autocomplete="off"
-      />
-      <button type="submit" id="send-btn">Send</button>
-    </form>
+    <!-- Map Controls / Legend -->
+    <div id="map-controls" class="map-controls">
+      <div id="map-legend" class="map-legend hidden"></div>
+    </div>
   </div>
 
   <!-- Third-party Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet Draw (for NDVI polygon drawing) -->
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <!-- App Scripts -->
-  <script src="js/chat.js"></script>
   <script src="js/map.js"></script>
+  <script src="js/chat.js"></script>
   <script src="js/voice.js"></script>
+  <script src="js/route.js"></script>
+  <script src="js/ndvi.js"></script>
 </body>
 </html>

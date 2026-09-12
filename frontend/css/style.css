@@ -16,7 +16,7 @@ body {
 
 .app-container {
   width: 100%;
-  max-width: 520px;
+  max-width: 620px;
   background: #ffffff;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
@@ -60,6 +60,49 @@ body {
   outline: none;
 }
 
+/* ====== TAB NAVIGATION ====== */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  background: #f1f5f9;
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.tab-btn:hover:not(.active) {
+  color: #334155;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
 /* Alert Banner */
 .alert-banner {
   background-color: #fee2e2;
@@ -76,11 +119,11 @@ body {
   display: none !important;
 }
 
-/* Chat Messages */
+/* ====== CHAT MESSAGES ====== */
 .chat-window {
   flex: 1;
-  min-height: 240px;
-  max-height: 320px;
+  min-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -124,19 +167,31 @@ body {
   background: #f1f5f9;
 }
 
-/* Map */
+/* ====== MAP ====== */
 .map-viewport {
-  height: 200px;
+  height: 300px;
   width: 100%;
   border-radius: 10px;
   border: 1px solid #cbd5e1;
   z-index: 1;
 }
 
+.map-controls {
+  position: relative;
+}
+
+.map-legend {
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.75rem;
+}
+
 /* Voice Controls */
 .voice-controls {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
 }
 
 .voice-controls button {
@@ -146,6 +201,26 @@ body {
   padding: 6px 12px;
   font-size: 0.82rem;
   cursor: pointer;
+}
+
+/* Weather tab toolbar (mic + language picker row) */
+.weather-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.lang-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lang-label {
+  font-size: 0.82rem;
+  color: #475569;
 }
 
 /* Input Form */
@@ -183,7 +258,347 @@ body {
   background: #1d4ed8;
 }
 
+/* ====== ROUTE FORM ====== */
+.route-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.route-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-inputs input {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+}
+
+.route-inputs input:focus {
+  border-color: #2563eb;
+}
+
+.route-arrow {
+  font-size: 1.2rem;
+  color: #64748b;
+  font-weight: bold;
+}
+
+.route-options {
+  display: flex;
+  gap: 8px;
+}
+
+.route-options input[type="datetime-local"] {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+#route-btn {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+#route-btn:hover { background: #1d4ed8; }
+#route-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ====== ROUTE SUMMARY ====== */
+.route-summary {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.summary-header h3 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.summary-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.weather-chip {
+  background: #e2e8f0;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  color: #334155;
+}
+
+.route-warning {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #991b1b;
+  margin-top: 4px;
+}
+
+.route-no-warning {
+  font-size: 0.82rem;
+  color: #16a34a;
+}
+
+/* ====== ROUTE ZONES ====== */
+.route-zones {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.route-zones h3 {
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.zone-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 6px;
+}
+
+.zone-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.zone-icon { font-size: 1.3rem; }
+
+.zone-cities {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.zone-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.zone-condition {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+/* ====== NDVI ====== */
+.ndvi-controls {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.ndvi-controls p {
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  color: #166534;
+}
+
+.ndvi-options {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ndvi-options input[type="date"] {
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+#ndvi-analyze-btn {
+  background: #16a34a;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#ndvi-analyze-btn:hover { background: #15803d; }
+#ndvi-analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#ndvi-clear-btn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.ndvi-results {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.ndvi-results h3 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.ndvi-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ndvi-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ndvi-breakdown {
+  margin-bottom: 10px;
+}
+
+.ndvi-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+}
+
+.ndvi-bar-label {
+  width: 80px;
+  text-transform: capitalize;
+  color: #475569;
+}
+
+.ndvi-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ndvi-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s;
+}
+
+.ndvi-bar-pct {
+  width: 35px;
+  text-align: right;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.ndvi-explanation {
+  font-size: 0.82rem;
+  color: #475569;
+  font-style: italic;
+  padding: 8px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.ndvi-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 0.78rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ====== SHARED ====== */
+.loading-panel {
+  text-align: center;
+  padding: 16px;
+  font-size: 0.9rem;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+
+.error-msg {
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ====== RESPONSIVE ====== */
+@media (max-width: 480px) {
+  .app-container { max-width: 100%; padding: 10px; }
+  .route-inputs { flex-direction: column; }
+  .route-arrow { transform: rotate(90deg); }
+  .route-options { flex-direction: column; }
+  .summary-stats { grid-template-columns: 1fr; }
+  .ndvi-summary-grid { grid-template-columns: 1fr; }
+  .ndvi-options { flex-direction: column; }
 }

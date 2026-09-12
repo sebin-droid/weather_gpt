@@ -8,6 +8,9 @@ from routers.alerts import router as alerts_router
 from routers.location import router as location_router
 from routers.translate import router as translate_router
 from routers.speech import router as speech_router
+from routers.route import router as route_router
+from routers.boundary import router as boundary_router
+from routers.ndvi import router as ndvi_router
 
 # Services
 from services.location_service import get_location
@@ -19,7 +22,7 @@ from services.weather_service import (
 app = FastAPI(
     title="WeatherGPT API",
     description="AI-powered weather intelligence backend",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -37,6 +40,9 @@ app.include_router(alerts_router)
 app.include_router(location_router)
 app.include_router(translate_router)
 app.include_router(speech_router)
+app.include_router(route_router)
+app.include_router(boundary_router)
+app.include_router(ndvi_router)
 
 
 # --------------------------------------------------
