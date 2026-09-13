@@ -4,11 +4,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# Initialize conditionally to prevent startup crashes if key is missing
+_api_key = os.getenv("GROQ_API_KEY")
+client = Groq(api_key=_api_key) if _api_key else None
 
 def speech_to_text(audio_file_bytes: bytes, filename: str = "audio.wav") -> str:
     """Sends audio bytes directly to Groq's Whisper large-v3 endpoint."""
-    if not os.getenv("GROQ_API_KEY"):
+    if not client:
+        print("Warning: GROQ_API_KEY is not set. Speech-to-text disabled.")
         return ""
     try:
         transcription = client.audio.transcriptions.create(
