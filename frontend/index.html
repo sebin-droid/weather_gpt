@@ -12,7 +12,7 @@
 <body>
 <div class="app-shell">
 
-  <!-- ── HEADER ─────────────────────────────────────── -->
+  <!-- HEADER -->
   <header class="app-header">
     <span class="header-brand">
       <i data-feather="cloud-rain"></i>
@@ -20,41 +20,40 @@
     </span>
 
     <div class="header-controls">
-      <!-- Language selector -->
       <div class="header-lang">
         <i data-feather="globe"></i>
         <select id="lang-select" aria-label="Select output language">
-          <option value="en">EN</option>
-          <option value="ml">ML</option>
-          <option value="hi">HI</option>
+          <option value="en">English</option>
+          <option value="ml">Malayalam</option>
+          <option value="hi">Hindi</option>
         </select>
       </div>
 
-      <!-- Theme toggle -->
-      <button id="theme-toggle" aria-label="Toggle light / dark mode" title="Toggle theme">
+      <button id="theme-toggle" aria-label="Switch between light and dark mode" title="Toggle theme">
         <i data-feather="sun"  class="icon-sun"></i>
         <i data-feather="moon" class="icon-moon"></i>
+        <span class="theme-label">Theme</span>
       </button>
     </div>
   </header>
 
-  <!-- ── DESKTOP NAV TABS ───────────────────────────── -->
+  <!-- DESKTOP NAV -->
   <nav class="app-nav" aria-label="Main navigation">
-    <button class="tab-btn active" data-tab="weather"    onclick="switchTab('weather')">
+    <button class="tab-btn active" data-tab="weather"   onclick="switchTab('weather')">
       <i data-feather="message-circle"></i> Weather
     </button>
-    <button class="tab-btn" data-tab="map"         onclick="switchTab('map')">
+    <button class="tab-btn" data-tab="map"        onclick="switchTab('map')">
       <i data-feather="map"></i> Map
     </button>
-    <button class="tab-btn" data-tab="route"       onclick="switchTab('route')">
+    <button class="tab-btn" data-tab="route"      onclick="switchTab('route')">
       <i data-feather="navigation"></i> Route
     </button>
-    <button class="tab-btn" data-tab="vegetation"  onclick="switchTab('vegetation')">
+    <button class="tab-btn" data-tab="vegetation" onclick="switchTab('vegetation')">
       <i data-feather="activity"></i> Vegetation
     </button>
   </nav>
 
-  <!-- ── ALERT BANNER (hidden by default) ──────────── -->
+  <!-- ALERT BANNER -->
   <div id="alert-banner" class="alert-banner hidden" role="alert" aria-live="assertive">
     <i data-feather="alert-triangle"></i>
     <span id="alert-text"></span>
@@ -63,36 +62,47 @@
     </button>
   </div>
 
-  <!-- ── MAIN BODY: content panel + map ────────────── -->
+  <!-- MAIN BODY: LEFT panel + RIGHT map -->
   <div class="app-body" data-view="weather">
 
-    <!-- Content panel (switches per tab) -->
+    <!-- LEFT: Content panel -->
     <div class="content-panel">
 
-      <!-- TAB: Weather / Chat ─────────────────────── -->
+      <!-- TAB: Weather / Chat -->
       <div id="tab-weather" class="tab-content active">
 
+        <!-- Orientation hint for new users -->
+        <div class="chat-hint">
+          <i data-feather="info"></i>
+          <span>Ask me anything about the weather — type below or tap a suggestion.</span>
+        </div>
+
         <!-- Quick-action chips -->
-        <div class="quick-actions" aria-label="Quick actions">
-          <button class="quick-chip" data-query="Will it rain today?">Will it rain today?</button>
-          <button class="quick-chip" data-query="Are there any weather alerts?">Weather alerts</button>
-          <button class="quick-chip" data-query="What is this week's forecast?">Weekly forecast</button>
+        <div class="quick-actions" aria-label="Quick weather questions">
+          <button class="quick-chip" data-query="Will it rain today?">
+            <i data-feather="cloud-drizzle"></i> Will it rain today?
+          </button>
+          <button class="quick-chip" data-query="Are there any weather alerts?">
+            <i data-feather="alert-circle"></i> Weather alerts
+          </button>
+          <button class="quick-chip" data-query="What is this week's forecast?">
+            <i data-feather="calendar"></i> Weekly forecast
+          </button>
         </div>
 
         <!-- Chat window -->
         <div id="chat-window" class="chat-window" role="log" aria-live="polite">
           <div class="msg bot">
             <span class="msg-avatar" aria-hidden="true"><i data-feather="cloud-rain"></i></span>
-            <span class="msg-text">Hello! Ask me about the weather in any city (e.g., <em>"Will it rain in Kochi tomorrow?"</em>).</span>
+            <span class="msg-text">Hello! Ask me about the weather in any city — for example, <em>"Will it rain in Kochi tomorrow?"</em></span>
           </div>
         </div>
 
-        <!-- Toolbar: voice controls + language fallback -->
+        <!-- Voice controls -->
         <div class="weather-toolbar">
           <div id="voice-controls" class="voice-controls" aria-label="Voice input"></div>
-          <!-- lang-wrap kept here as a fallback on narrow screens -->
-          <div class="lang-wrap" aria-hidden="true">
-            <label for="lang-select-tb" class="lang-label">Lang:</label>
+          <div class="toolbar-right">
+            <span class="toolbar-hint">or type your question below</span>
           </div>
         </div>
 
@@ -101,34 +111,53 @@
           <input
             type="text"
             id="user-input"
-            placeholder="Ask about weather, rainfall, or travel advice..."
+            placeholder="e.g. Will it rain in Mumbai tomorrow?"
             autocomplete="off"
-            aria-label="Type your weather question"
+            aria-label="Type your weather question here"
           >
           <button type="submit" id="send-btn" aria-label="Send message">
             <i data-feather="send"></i>
+            <span class="send-label">Send</span>
           </button>
         </form>
 
       </div>
       <!-- /tab-weather -->
 
-      <!-- TAB: Map ─────────────────────────────────── -->
+      <!-- TAB: Map -->
       <div id="tab-map" class="tab-content">
-        <span class="map-toolbar-title">Interactive Map</span>
+        <div class="map-tab-info">
+          <i data-feather="map-pin"></i>
+          <span>The map is displayed on the right. Use the controls to explore.</span>
+        </div>
       </div>
 
-      <!-- TAB: Route Weather ───────────────────────── -->
+      <!-- TAB: Route Weather -->
       <div id="tab-route" class="tab-content">
+
+        <div class="section-header">
+          <i data-feather="navigation"></i>
+          <h2>Route Weather</h2>
+          <p>Check weather conditions along your travel route.</p>
+        </div>
 
         <div class="route-form">
           <div class="route-inputs">
-            <input type="text" id="route-origin" placeholder="From (e.g., Kanyakumari)" aria-label="Origin city">
-            <span class="route-arrow" aria-hidden="true"><i data-feather="arrow-down"></i></span>
-            <input type="text" id="route-dest"   placeholder="To (e.g., New Delhi)"     aria-label="Destination city">
+            <div class="route-field">
+              <label for="route-origin">From</label>
+              <input type="text" id="route-origin" placeholder="e.g. Kanyakumari" aria-label="Origin city">
+            </div>
+            <span class="route-arrow" aria-hidden="true"><i data-feather="arrow-right"></i></span>
+            <div class="route-field">
+              <label for="route-dest">To</label>
+              <input type="text" id="route-dest" placeholder="e.g. New Delhi" aria-label="Destination city">
+            </div>
           </div>
           <div class="route-options">
-            <input type="datetime-local" id="route-time" aria-label="Departure date and time">
+            <div class="route-field">
+              <label for="route-time">Departure time</label>
+              <input type="datetime-local" id="route-time" aria-label="Departure date and time">
+            </div>
             <button id="route-btn">
               <i data-feather="navigation"></i>
               Get Route Weather
@@ -145,13 +174,21 @@
       </div>
       <!-- /tab-route -->
 
-      <!-- TAB: Vegetation (NDVI) ───────────────────── -->
+      <!-- TAB: Vegetation (NDVI) -->
       <div id="tab-vegetation" class="tab-content">
 
+        <div class="section-header">
+          <i data-feather="activity"></i>
+          <h2>Vegetation Health</h2>
+          <p>Draw a polygon on the map, then analyze vegetation using satellite data.</p>
+        </div>
+
         <div class="ndvi-controls">
-          <p>Draw a polygon on the map to analyze vegetation health using satellite data.</p>
           <div class="ndvi-options">
-            <input type="date" id="ndvi-date" aria-label="Analysis date">
+            <div class="route-field">
+              <label for="ndvi-date">Analysis date</label>
+              <input type="date" id="ndvi-date" aria-label="Analysis date">
+            </div>
             <button id="ndvi-analyze-btn" disabled>
               <i data-feather="bar-chart-2"></i>
               Analyze NDVI
@@ -174,7 +211,7 @@
     </div>
     <!-- /content-panel -->
 
-    <!-- Map section — always in DOM for Leaflet -->
+    <!-- RIGHT: Map — always in DOM -->
     <div class="map-section">
       <div id="map" class="map-viewport" aria-label="Interactive weather map"></div>
       <div id="map-controls" class="map-controls">
@@ -185,35 +222,32 @@
   </div>
   <!-- /app-body -->
 
-  <!-- ── MOBILE BOTTOM NAV ─────────────────────────── -->
+  <!-- MOBILE BOTTOM NAV -->
   <nav class="mobile-nav" aria-label="Navigation">
-    <button class="mobile-nav-btn active" data-tab="weather"    onclick="switchTab('weather')">
+    <button class="mobile-nav-btn active" data-tab="weather"   onclick="switchTab('weather')">
       <i data-feather="message-circle"></i>
       <span>Weather</span>
     </button>
-    <button class="mobile-nav-btn" data-tab="map"          onclick="switchTab('map')">
+    <button class="mobile-nav-btn" data-tab="map"         onclick="switchTab('map')">
       <i data-feather="map"></i>
       <span>Map</span>
     </button>
-    <button class="mobile-nav-btn" data-tab="route"        onclick="switchTab('route')">
+    <button class="mobile-nav-btn" data-tab="route"       onclick="switchTab('route')">
       <i data-feather="navigation"></i>
       <span>Route</span>
     </button>
-    <button class="mobile-nav-btn" data-tab="vegetation"   onclick="switchTab('vegetation')">
+    <button class="mobile-nav-btn" data-tab="vegetation"  onclick="switchTab('vegetation')">
       <i data-feather="activity"></i>
-      <span>Farm</span>
+      <span>Vegetation</span>
     </button>
   </nav>
 
 </div>
-<!-- /app-shell -->
 
-<!-- Third-party scripts (loaded before app scripts) -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
 
-<!-- App scripts -->
 <script src="js/theme.js"></script>
 <script src="js/map.js"></script>
 <script src="js/chat.js"></script>
@@ -221,11 +255,9 @@
 <script src="js/route.js"></script>
 <script src="js/ndvi.js"></script>
 
-<!-- Activate Feather icons + wire quick chips -->
 <script>
   feather.replace({ 'stroke-width': 2 });
 
-  // Quick-action chips: send preset query to chat
   document.querySelectorAll('.quick-chip').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var query = btn.getAttribute('data-query');
@@ -235,7 +267,6 @@
     });
   });
 
-  // Alert banner close button
   var alertClose = document.getElementById('alert-close');
   if (alertClose) {
     alertClose.addEventListener('click', function() {
