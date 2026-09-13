@@ -95,6 +95,7 @@ def route_weather(
         "start_time": start_time,
         "arrival_time": summary["arrival_time"],
         "route_geometry": route_data["route_geometry"],
+        "route_points": waypoints_with_weather,
         "zones": zones,
         "summary": summary,
     }
