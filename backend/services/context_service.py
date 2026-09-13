@@ -4,12 +4,10 @@ context_service.py
 Short-term conversation memory and context resolution for WeatherGPT chat.
 
 Responsibilities:
-  - detect_follow_up()           → Is the current message a follow-up?
+  - detect_follow_up()              → Is this a follow-up message?
   - extract_location_from_history() → Pull last known city from chat history
-  - extract_context_from_history()  → Pull last known intent/weather state
-  - resolve_location()           → Current question location OR history location
-  - resolve_intent()             → Current intent OR inherited from history
-  - resolve_conversation_context()  → Main entry point; returns a full ConversationContext
+  - extract_context_from_history()  → Pull last known intent/time/weather state
+  - resolve_conversation_context()  → Main entry point; returns ConversationContext
 """
 
 from __future__ import annotations
@@ -25,13 +23,14 @@ from services.nlp_service import understand_query
 # Follow-up detection
 # ---------------------------------------------------------------------------
 
-# Phrases that signal the user is continuing a previous topic, not starting new
 _FOLLOWUP_PHRASES: set[str] = {
     # Elaboration
     "more", "tell more", "tell me more", "elaborate", "explain", "describe",
     "describe more", "give more", "more details", "more detail", "more info",
     "more information", "show more", "show details", "show me more",
     "brief me", "brief", "summary", "summarize", "details",
+    "tell me about the situation", "more about the situation",
+    "what does that mean", "what does this mean",
     # Reference words
     "why", "how", "how so", "what else", "anything else",
     "what about it", "it", "this", "that", "there", "here",
@@ -42,17 +41,23 @@ _FOLLOWUP_PHRASES: set[str] = {
     # Single-word attribute follow-ups
     "humidity", "wind", "temperature", "rain", "fog", "snow",
     "pressure", "uv", "visibility", "precipitation",
+    # Advice follow-ups
+    "should i carry an umbrella", "should i take an umbrella",
+    "can i go outside", "is it okay to go outside",
+    "can i travel", "is it good for travel", "should i go out",
+    "is it safe to go out", "can i play outside",
     # Informal
-    "and?", "so?", "ok and?", "then?", "okay",
+    "and?", "so?", "ok and?", "then?", "okay", "how bad is it",
+    "how good is it", "is it bad", "is it good",
 }
 
-# Regex patterns for follow-up detection (applied to normalised lowercase text)
 _FOLLOWUP_PATTERNS: list[str] = [
-    r"^(what\s+about\s+(it|that|there|this|tomorrow|today|tonight|humidity|wind|temperature|rain|forecast))\b",
+    r"^(what\s+about\s+(it|that|there|this|tomorrow|today|tonight|humidity|wind|temperature|rain|forecast|the\s+situation|the\s+next\s+day|the\s+day\s+after))\b",
     r"^(how\s+about\s+(it|that|there|this|tomorrow|humidity|wind|temperature|rain))\b",
-    r"^(and\s+(humidity|wind|temperature|rain|tomorrow|forecast|what))\b",
-    r"^(is\s+it\s+(hot|cold|windy|humid|rainy|cloudy|sunny|ok|fine))\b",
-    r"^(will\s+it\s+rain)\s*\??$",           # "will it rain?" with NO city
+    r"^(and\s+(humidity|wind|temperature|rain|tomorrow|forecast|what|the))\b",
+    r"^(is\s+it\s+(hot|cold|windy|humid|rainy|cloudy|sunny|ok|fine|going\s+to|safe))\b",
+    r"^(will\s+it\s+rain)\s*\??$",
+    r"^(will\s+it\s+be\s+(rainy|cloudy|sunny|hot|cold|windy))\s*\??$",
     r"^(rain\s+tomorrow)\s*\??$",
     r"^(tomorrow)\s*\??$",
     r"^(tonight)\s*\??$",
@@ -60,13 +65,13 @@ _FOLLOWUP_PATTERNS: list[str] = [
     r"^(what\s+about\s+tomorrow)\b",
     r"^(day\s+after)\b",
     r"^(the\s+day\s+after)\b",
+    r"^(the\s+next\s+day)\b",
+    r"^(should\s+i\s+(carry|take|bring|wear|go|travel|go out|play))\b",
+    r"^(can\s+i\s+(go|travel|play|work))\b",
+    r"^(give\s+me\s+(more|details|information))\b",
+    r"^(tell\s+me\s+(more|about))\b",
+    r"^(explain\s+(that|this|more|it))\b",
 ]
-
-# Words/patterns that strongly indicate a NEW location is mentioned
-_NEW_LOCATION_PATTERN = re.compile(
-    r"\b(in|at|for|near|around|of)\s+([A-Za-z\u0900-\u097F\u0D00-\u0D7F]+(?:\s+[A-Za-z]+)?)\b",
-    re.IGNORECASE,
-)
 
 
 def _normalise(text: str) -> str:
@@ -75,28 +80,21 @@ def _normalise(text: str) -> str:
 
 def detect_follow_up(question: str, history: list[dict]) -> bool:
     """
-    Returns True if the current question appears to be a follow-up to a
-    previous message rather than a brand-new, self-contained query.
-
-    A question is treated as a follow-up when:
-    1. It matches a known follow-up phrase / pattern, AND
-    2. There is some existing conversation history to follow up on.
+    Returns True if the current question is a follow-up to a previous message.
+    A follow-up requires: matching phrase/pattern AND existing history.
     """
     if not history:
-        return False  # No history → cannot be a follow-up
+        return False
 
     t = _normalise(question)
 
-    # Exact match in known follow-up set
     if t in _FOLLOWUP_PHRASES:
         return True
 
-    # Starts with a known follow-up phrase
     for phrase in _FOLLOWUP_PHRASES:
-        if t.startswith(phrase) and len(t) < len(phrase) + 25:
+        if t.startswith(phrase) and len(t) < len(phrase) + 30:
             return True
 
-    # Regex patterns
     for pattern in _FOLLOWUP_PATTERNS:
         if re.match(pattern, t):
             return True
@@ -109,29 +107,22 @@ def detect_follow_up(question: str, history: list[dict]) -> bool:
 # ---------------------------------------------------------------------------
 
 def extract_location_from_history(history: list[dict]) -> str | None:
-    """
-    Walk the history (newest first) and extract the last city name that
-    was mentioned either in the user's message or the assistant's reply.
-
-    We look for the 'location' stored in assistant metadata if present,
-    otherwise try to parse it from the assistant's text.
-    """
-    # Walk newest → oldest
+    """Walk history (newest first) to find the last known city."""
     for turn in reversed(history):
-        # If the frontend stores structured metadata alongside messages
         if turn.get("role") == "assistant":
-            loc = turn.get("location")       # may be set by frontend
+            loc = turn.get("location")
             if loc:
                 return loc
-            # Try to parse "in <City>" from assistant response
+            # Parse from text: "In Kochi on..." or "Kochi is currently..."
             text = turn.get("content", "")
-            m = re.search(r"\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", text)
+            m = re.search(r"\b(?:in|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", text)
             if m:
-                return m.group(1)
+                candidate = m.group(1)
+                # Avoid false positives like "In Mumbai on 2026-09-14"
+                if candidate not in {"Tomorrow", "Today", "Tonight"}:
+                    return candidate
         elif turn.get("role") == "user":
-            # Parse from user message as fallback
             text = turn.get("content", "")
-            # run a quick NLP pass
             q = understand_query(text)
             if q.get("location"):
                 return q["location"]
@@ -140,15 +131,20 @@ def extract_location_from_history(history: list[dict]) -> str | None:
 
 def extract_context_from_history(history: list[dict]) -> dict:
     """
-    Extract the last known intent, weather_variable, and time from history.
-    Returns a dict with defaults if nothing found.
+    Extract the last known intent, weather_variable, time, and weather_data
+    from history. Returns sensible defaults if nothing found.
     """
     for turn in reversed(history):
         if turn.get("role") == "assistant":
-            ctx = turn.get("context", {})
-            if ctx:
+            ctx = turn.get("context")
+            if ctx and isinstance(ctx, dict):
                 return ctx
-    return {"intent": "current_weather", "weather_variable": "general", "time": "now"}
+    return {
+        "intent": "current_weather",
+        "weather_variable": "general",
+        "time": "now",
+        "weather_data": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -160,12 +156,14 @@ class ConversationContext:
     question: str
     lang: str
     is_follow_up: bool
-    resolved_location: str | None    # city name ready for get_location()
+    resolved_location: str | None
     intent: str
     weather_variable: str
     time: str
     history: list[dict] = field(default_factory=list)
-    previous_weather_data: dict = field(default_factory=dict)
+    previous_weather_data: Any = None    # dict (current) or list (forecast)
+    # For extensibility (future: vegetation, route, NDVI, etc.)
+    domain: str = "weather"
 
 
 # ---------------------------------------------------------------------------
@@ -178,52 +176,51 @@ def resolve_conversation_context(
     history: list[dict],
 ) -> ConversationContext:
     """
-    Main entry point.  Given the raw question, language, and conversation
-    history, return a fully resolved ConversationContext ready for the
-    chat router to use.
+    Main entry point. Returns a fully resolved ConversationContext.
 
-    Flow:
-      1. Detect whether this is a follow-up.
-      2. Run NLP on the current question to get intent/location.
-      3. If no location found → try to inherit from history.
-      4. If intent is generic (follow-up) → inherit from history context.
-      5. Return ConversationContext.
+    Priority:
+      1. Explicit info in current question
+      2. Previous conversation context (location, intent, time)
+      3. Ask user
     """
     is_followup = detect_follow_up(question, history)
 
-    # Run NLP (LLM-first, regex fallback) on the current question
+    # NLP on current question
     query = understand_query(question)
 
-    # --- Location resolution ---
+    # --- Location: current question wins, then history ---
     resolved_location = query.get("location")
-
     if not resolved_location:
-        # No location in current message → try history
         resolved_location = extract_location_from_history(history)
 
-    # --- Intent / variable resolution ---
+    # --- Intent / variable / time from current question ---
     intent = query.get("intent", "current_weather")
     weather_variable = query.get("weather_variable", "general")
     time = query.get("time", "now")
 
-    # If we detected a follow-up and the NLP gives current_weather/general
-    # for what looks like a refinement → inherit previous intent context
-    if is_followup:
+    # --- Follow-up: fully inherit previous context when current is vague ---
+    if is_followup and history:
         prev_ctx = extract_context_from_history(history)
-        # Only inherit if current query didn't detect something specific
-        if intent == "current_weather" and weather_variable == "general":
-            intent = "current_weather"         # keep as current unless overridden
-            weather_variable = prev_ctx.get("weather_variable", "general")
-        # Keep time if newly specified, else inherit
-        if time == "now":
-            time = prev_ctx.get("time", "now")
 
-    # --- Extract previous weather data from history (for LLM context) ---
-    previous_weather_data: dict[str, Any] = {}
+        # If NLP didn't detect anything specific in the current question,
+        # inherit everything from the previous turn (including "forecast" intent!)
+        if intent == "current_weather" and weather_variable == "general":
+            intent = prev_ctx.get("intent", "current_weather")
+            weather_variable = prev_ctx.get("weather_variable", "general")
+
+        # Inherit time only if current question didn't specify one
+        if time == "now":
+            prev_time = prev_ctx.get("time", "now")
+            time = prev_time
+
+    # --- Previous weather data (for LLM to reuse without re-fetching) ---
+    previous_weather_data: Any = None
     for turn in reversed(history):
-        if turn.get("role") == "assistant" and turn.get("weather_data"):
-            previous_weather_data = turn["weather_data"]
-            break
+        if turn.get("role") == "assistant":
+            wd = turn.get("weather_data")
+            if wd is not None:
+                previous_weather_data = wd
+                break
 
     return ConversationContext(
         question=question,
@@ -233,6 +230,7 @@ def resolve_conversation_context(
         intent=intent,
         weather_variable=weather_variable,
         time=time,
-        history=history[-10:],           # keep last 10 messages max
+        history=history[-10:],
         previous_weather_data=previous_weather_data,
+        domain="weather",
     )
