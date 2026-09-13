@@ -1,156 +1,354 @@
-import os
+"""
+nlp_service.py
+--------------
+Two-tier query understanding pipeline:
+
+  Tier 1 (Primary)  — Ask the Groq LLM to extract intent / location / time /
+                       weather_variable as structured JSON.  Works for any language
+                       or phrasing without hand-crafted rules.
+
+  Tier 2 (Fallback) — If the LLM is unavailable (no API key, timeout, quota) fall
+                       back to an improved regex + keyword system that covers ~60
+                       major Indian cities and a broader intent vocabulary.
+"""
+
 import re
-import requests
-def normalize_query(question: str) -> str:
-    # Keep common Malayalam input usable when the external translator is unavailable.
-    replacements = {
-        "ഡൽഹിയിലെ": " Delhi ",
-        "ഡൽഹി": " Delhi ",
-        "കാലാവസ്ഥ": " weather ",
-        "വിവരിക്കാമോ": " describe ",
-        "दिल्ली": " Delhi ",
-        "मौसम": " weather ",
-        "वर्णन": " describe ",
-        "\u0d15\u0d4a\u0d1a\u0d4d\u0d1a\u0d3f\u0d2f\u0d3f\u0d32\u0d46": " Kochi ",
-        "\u0d15\u0d4a\u0d1a\u0d4d\u0d1a\u0d3f": "Kochi",
-        "\u0d15\u0d4b\u0d34\u0d3f\u0d15\u0d4d\u0d15\u0d4b\u0d1f\u0d4d": "Kozhikode",
-        "\u0d24\u0d3f\u0d30\u0d41\u0d35\u0d28\u0d28\u0d4d\u0d24\u0d2a\u0d41\u0d30\u0d02": "Thiruvananthapuram",
-        "\u0d24\u0d3e\u0d2a\u0d28\u0d3f\u0d32": "temperature",
-        "\u0d24\u0d3e\u0d2a\u0d28\u0d3f\u0d32\u0d2f\u0d46\u0d28\u0d4d\u0d24\u0d3e\u0d23\u0d4d": "temperature",
-            "\u0d8e\u0d28\u0d4d\u0d24\u0d3e\u0d23\u0d4d": " what is ",
-            "\u0d21\u0d7d\u0d32\u0d4d\u0d32\u0d3f\u0d2f\u0d3f\u0d32\u0d46": " Delhi ",
-            "\u0d21\u0d7d\u0d32\u0d4d\u0d32\u0d3f": "Delhi",
-            "\u0d15\u0d3e\u0d32\u0d3e\u0d35\u0d38\u0d4d\u0d25": " weather ",
-            "\u0d35\u0d3f\u0d35\u0d30\u0d3f\u0d15\u0d4d\u0d15\u0d3e\u0d2e\u0d4b": " describe ",
-            "\u0926\u093f\u0932\u094d\u0932\u0940": " Delhi ",
-            "\u092e\u094c\u0938\u092e": " weather ",
-            "\u092c\u0924\u093e\u090f\u0902": " describe ",
-    }
-    normalized = question
-    for source, replacement in replacements.items():
-        normalized = normalized.replace(source, f" {replacement} ")
-    return normalized
+from services.llm_service import extract_query_info
 
 
-# Hugging Face Multilingual Transformer Model Endpoints
-HF_TOKEN = os.getenv("HF_API_TOKEN")
-INDICBERT_URL = "https://api-inference.huggingface.co/models/ai4bharat/indic-bert"
-XLMR_URL = "https://api-inference.huggingface.co/models/xlm-roberta-base"
+# ---------------------------------------------------------------------------
+# Fallback Tier 2 — Regex / keyword pipeline
+# ---------------------------------------------------------------------------
 
-HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+# ~60 major Indian cities + common script variants / suffixes
+COMMON_CITIES: dict[str, str] = {
+    # Kerala
+    "kochi": "Kochi",
+    "cochin": "Kochi",
+    "kozhikode": "Kozhikode",
+    "calicut": "Kozhikode",
+    "thiruvananthapuram": "Thiruvananthapuram",
+    "trivandrum": "Thiruvananthapuram",
+    "thrissur": "Thrissur",
+    "palakkad": "Palakkad",
+    "kollam": "Kollam",
+    "kannur": "Kannur",
+    "malappuram": "Malappuram",
+    "alappuzha": "Alappuzha",
+    "alleppey": "Alappuzha",
+    "pattom": "Pattom",
+
+    # Tamil Nadu
+    "chennai": "Chennai",
+    "madras": "Chennai",
+    "coimbatore": "Coimbatore",
+    "madurai": "Madurai",
+    "tiruchirappalli": "Tiruchirappalli",
+    "trichy": "Tiruchirappalli",
+    "salem": "Salem",
+    "tirunelveli": "Tirunelveli",
+    "vellore": "Vellore",
+    "erode": "Erode",
+
+    # Karnataka
+    "bangalore": "Bangalore",
+    "bengaluru": "Bangalore",
+    "mysore": "Mysore",
+    "mysuru": "Mysore",
+    "hubli": "Hubli",
+    "mangalore": "Mangalore",
+    "mangaluru": "Mangalore",
+    "belgaum": "Belgaum",
+    "gulbarga": "Gulbarga",
+
+    # Maharashtra
+    "mumbai": "Mumbai",
+    "bombay": "Mumbai",
+    "pune": "Pune",
+    "nagpur": "Nagpur",
+    "nashik": "Nashik",
+    "aurangabad": "Aurangabad",
+    "solapur": "Solapur",
+
+    # Delhi / NCR
+    "delhi": "Delhi",
+    "new delhi": "Delhi",
+    "noida": "Noida",
+    "gurgaon": "Gurgaon",
+    "gurugram": "Gurgaon",
+    "faridabad": "Faridabad",
+
+    # North India
+    "agra": "Agra",
+    "lucknow": "Lucknow",
+    "kanpur": "Kanpur",
+    "varanasi": "Varanasi",
+    "benaras": "Varanasi",
+    "allahabad": "Prayagraj",
+    "prayagraj": "Prayagraj",
+    "jaipur": "Jaipur",
+    "jodhpur": "Jodhpur",
+    "udaipur": "Udaipur",
+    "amritsar": "Amritsar",
+    "chandigarh": "Chandigarh",
+    "shimla": "Shimla",
+    "dehradun": "Dehradun",
+
+    # East India
+    "kolkata": "Kolkata",
+    "calcutta": "Kolkata",
+    "bhubaneswar": "Bhubaneswar",
+    "patna": "Patna",
+    "ranchi": "Ranchi",
+    "guwahati": "Guwahati",
+
+    # Telangana / AP
+    "hyderabad": "Hyderabad",
+    "secunderabad": "Hyderabad",
+    "visakhapatnam": "Visakhapatnam",
+    "vizag": "Visakhapatnam",
+    "vijayawada": "Vijayawada",
+    "warangal": "Warangal",
+
+    # Goa
+    "panaji": "Panaji",
+    "goa": "Panaji",
+
+    # Gujarat
+    "ahmedabad": "Ahmedabad",
+    "surat": "Surat",
+    "vadodara": "Vadodara",
+    "baroda": "Vadodara",
+    "rajkot": "Rajkot",
+
+    # Script variants (Malayalam)
+    "കൊച്ചി": "Kochi",
+    "കൊച്ചിയിൽ": "Kochi",
+    "കൊച്ചിയിലെ": "Kochi",
+    "കോഴിക്കോട്": "Kozhikode",
+    "തിരുവനന്തപുരം": "Thiruvananthapuram",
+    "ഡൽഹി": "Delhi",
+    "ഡൽഹിയിലെ": "Delhi",
+    "മുംബൈ": "Mumbai",
+    "ബാംഗ്ലൂർ": "Bangalore",
+    "ചെന്നൈ": "Chennai",
+    # Script variants (Hindi / Devanagari)
+    "दिल्ली": "Delhi",
+    "मुंबई": "Mumbai",
+    "बेंगलुरु": "Bangalore",
+    "कोलकाता": "Kolkata",
+    "चेन्नई": "Chennai",
+    "हैदराबाद": "Hyderabad",
+    "पुणे": "Pune",
+    "जयपुर": "Jaipur",
+    "लखनऊ": "Lucknow",
+    "अहमदाबाद": "Ahmedabad",
+}
+
+# Multilingual normalisation map — translate common weather words in Indian
+# scripts to English equivalents so the keyword matcher below works.
+_NORMALIZE_MAP: dict[str, str] = {
+    # Malayalam weather words
+    "കാലാവസ്ഥ": " weather ",
+    "മഴ": " rain ",
+    "താപനില": " temperature ",
+    "കാറ്റ്": " wind ",
+    "ഈർപ്പം": " humidity ",
+    "ഇന്ന്": " today ",
+    "നാളെ": " tomorrow ",
+    "വിവരിക്കാമോ": " describe ",
+    "എന്താണ്": " what is ",
+    # Hindi weather words
+    "मौसम": " weather ",
+    "बारिश": " rain ",
+    "वर्षा": " rain ",
+    "तापमान": " temperature ",
+    "हवा": " wind ",
+    "आर्द्रता": " humidity ",
+    "आज": " today ",
+    "कल": " tomorrow ",
+    "वर्णन": " describe ",
+    "बताएं": " describe ",
+    # Tamil
+    "வானிலை": " weather ",
+    "மழை": " rain ",
+    "வெப்பநிலை": " temperature ",
+    "காற்று": " wind ",
+    "இன்று": " today ",
+    "நாளை": " tomorrow ",
+    # Telugu
+    "వాతావరణం": " weather ",
+    "వర్షం": " rain ",
+    "ఉష్ణోగ్రత": " temperature ",
+    "గాలి": " wind ",
+    "ఈరోజు": " today ",
+    "రేపు": " tomorrow ",
+    # Bengali
+    "আবহাওয়া": " weather ",
+    "বৃষ্টি": " rain ",
+    "তাপমাত্রা": " temperature ",
+    "বাতাস": " wind ",
+    "আজ": " today ",
+    "আগামীকাল": " tomorrow ",
+}
+
+# Intent keyword groups (English, after normalisation)
+_FORECAST_WORDS = {
+    "forecast", "tomorrow", "tommorrow", "next week", "next few days",
+    "coming days", "this week", "weekend", "week", "days ahead",
+}
+_RAIN_WORDS = {
+    "rain", "raining", "rainfall", "pour", "pouring", "drizzle",
+    "drizzling", "shower", "storm", "flood", "precipitation",
+}
+_TEMP_WORDS = {
+    "temperature", "temp", "hot", "cold", "heat", "cool", "warm",
+    "feels like", "chilly", "freezing", "boiling",
+}
+_WIND_WORDS = {"wind", "windy", "gust", "breeze", "gale"}
+_HUMIDITY_WORDS = {"humidity", "humid", "muggy", "damp", "moisture"}
+
+_TIME_MAP = {
+    "tomorrow": "tomorrow",
+    "tommorrow": "tomorrow",
+    "tonight": "tonight",
+    "today": "today",
+    "next week": "next_week",
+    "weekend": "weekend",
+    "this week": "next_week",
+}
 
 
-def extract_entities_with_transformer(text: str, model_url: str):
+def _normalize(text: str) -> str:
+    """Replace non-Latin weather/time/place terms with English equivalents."""
+    for src, repl in _NORMALIZE_MAP.items():
+        text = text.replace(src, repl)
+    return text
+
+
+def _extract_location_fallback(question: str) -> str | None:
     """
-    Queries Hugging Face model endpoints for multilingual NLP representations.
-    Gracefully returns None if offline, unconfigured, or rate-limited.
+    Try to extract a city name from *question* using:
+    1. Direct match against the COMMON_CITIES dictionary (handles scripts too).
+    2. Regex patterns that look for city names near prepositions or
+       the word 'weather'.
     """
-    if not HF_TOKEN:
-        return None
-    try:
-        response = requests.post(model_url, headers=HEADERS, json={"inputs": text}, timeout=4)
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return None
+    q_lower = question.lower()
 
+    # 1. Direct dictionary scan — strip punctuation for each token.
+    tokens = [re.sub(r"[^\w\s]", "", w) for w in question.split()]
+    for tok in tokens:
+        if tok.lower() in COMMON_CITIES:
+            return COMMON_CITIES[tok.lower()]
+        if tok in COMMON_CITIES:  # script variants (exact case)
+            return COMMON_CITIES[tok]
 
-def extract_location(question: str):
-    """
-    Location extraction prioritizing regex rules and common Indian city keywords.
-    """
-    question = normalize_query(question)
+    # 2. Multi-word city check (e.g. "new delhi")
+    for city_key, city_val in COMMON_CITIES.items():
+        if " " in city_key and city_key in q_lower:
+            return city_val
+
+    # 3. Regex: "weather in <City>", "weather at <City>", "weather for <City>"
     patterns = [
-        r"\b(?:in|at|for)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)*?)(?=\s+(?:today|tomorrow|tommorrow|next week)\b|[?!.,]|$)"
+        r"\b(?:in|at|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\b",
+        r"\b([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+weather\b",
+        r"\bweather\s+(?:of\s+|in\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)?)\b",
     ]
-
+    stop_words = {
+        "celsius", "centigrade", "fahrenheit", "detail", "details",
+        "the", "a", "an", "is", "are", "will", "be", "it", "like",
+        "today", "tomorrow", "next", "week", "forecast",
+    }
     for pattern in patterns:
         match = re.search(pattern, question, re.IGNORECASE)
         if match:
             loc = match.group(1).strip()
-            if loc.lower() not in {"celsius", "centigrade", "fahrenheit", "detail", "details"}:
-                return loc.title()
-
-    # Fallback to direct token scan for common Indian cities & local places
-    common_cities = {
-        "kochi": "Kochi",
-        "കൊച്ചി": "Kochi",
-        "കൊച്ചിയിൽ": "Kochi",
-        "കൊച്ചിയിലെ": "Kochi",
-        "delhi": "Delhi",
-        "दिल्ली": "Delhi",
-        "ഡൽഹി": "Delhi",
-        "mumbai": "Mumbai",
-        "മുംബൈ": "Mumbai",
-        "trivandrum": "Thiruvananthapuram",
-        "തിരുവനന്തപുരം": "Thiruvananthapuram",
-        "pattom": "Pattom",
-        "പട്ടം": "Pattom",
-        "പട്ടത്ത്": "Pattom"
-    }
-    
-    words = [re.sub(r"[^\w\s]", "", w).lower() for w in question.split()]
-    for word in words:
-        if word in common_cities:
-            return common_cities[word]
+            if loc.lower() not in stop_words:
+                # Check if it maps to a known city; otherwise return as-is
+                return COMMON_CITIES.get(loc.lower(), loc.title())
 
     return None
 
 
-def understand_query(question: str):
-    question = normalize_query(question)
+def _understand_query_fallback(question: str) -> dict:
+    """Keyword/regex-based fallback for when the LLM is unavailable."""
+    normalised = _normalize(question).lower().strip()
 
-    # Step 1: Multilingual model evaluation (IndicBERT -> XLM-R fallback)
-    indic_entities = extract_entities_with_transformer(question, INDICBERT_URL)
-    if not indic_entities:
-        extract_entities_with_transformer(question, XLMR_URL)
-
-    # Step 2: Intent, time, and variable determination
-    q_clean = question.lower().strip()
-
-    # Detect intent
-    if any(word in q_clean for word in ["forecast", "tomorrow", "tommorrow", "next week", "next few days", "coming days"]):
+    # --- Intent detection ---
+    if any(w in normalised for w in _FORECAST_WORDS):
         intent = "forecast"
-    elif any(word in q_clean for word in ["rain", "raining", "rainfall"]):
+    elif any(w in normalised for w in _RAIN_WORDS):
         intent = "rain"
-    elif any(word in q_clean for word in ["temperature", "hot", "cold", "heat"]):
+    elif any(w in normalised for w in _TEMP_WORDS):
         intent = "temperature"
-    elif any(word in q_clean for word in ["wind", "windy"]):
+    elif any(w in normalised for w in _WIND_WORDS):
         intent = "wind"
-    elif any(word in q_clean for word in ["humidity", "humid"]):
+    elif any(w in normalised for w in _HUMIDITY_WORDS):
         intent = "humidity"
     else:
         intent = "current_weather"
 
-    # Detect time
-    if any(w in q_clean for w in ["tomorrow", "tommorrow"]):
-        time = "tomorrow"
-    elif "today" in q_clean:
-        time = "today"
-    elif "next week" in q_clean:
-        time = "next_week"
-    else:
-        time = "now"
+    # --- Time detection ---
+    time = "now"
+    for phrase, label in _TIME_MAP.items():
+        if phrase in normalised:
+            time = label
+            break
 
-    # Detect weather variable
-    if any(word in q_clean for word in ["rain", "raining", "rainfall"]):
+    # --- Weather variable ---
+    if any(w in normalised for w in _RAIN_WORDS):
         weather_variable = "rain"
-    elif any(word in q_clean for word in ["temperature", "hot", "cold", "heat"]):
+    elif any(w in normalised for w in _TEMP_WORDS):
         weather_variable = "temperature"
-    elif any(word in q_clean for word in ["wind", "windy"]):
+    elif any(w in normalised for w in _WIND_WORDS):
         weather_variable = "wind"
-    elif any(word in q_clean for word in ["humidity", "humid"]):
+    elif any(w in normalised for w in _HUMIDITY_WORDS):
         weather_variable = "humidity"
     else:
         weather_variable = "general"
 
-    # Step 3: Location resolution
-    location = extract_location(question)
+    # --- Location ---
+    location = _extract_location_fallback(_normalize(question))
 
     return {
         "intent": intent,
         "location": location,
         "time": time,
-        "weather_variable": weather_variable
+        "weather_variable": weather_variable,
     }
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def understand_query(question: str) -> dict:
+    """
+    Understand a user's weather question and return structured query info.
+
+    Tries the LLM first (Tier 1).  Falls back to keyword matching (Tier 2)
+    if the LLM is unavailable or returns bad output.
+
+    Returns:
+        {
+            "intent": str,
+            "location": str | None,
+            "time": str,
+            "weather_variable": str,
+            "source": "llm" | "fallback"   ← for debugging
+        }
+    """
+    # Tier 1 — LLM
+    llm_result = extract_query_info(question)
+    if llm_result:
+        llm_result["source"] = "llm"
+        # Sanitise location from LLM — map to canonical name if possible
+        loc = llm_result.get("location")
+        if loc:
+            llm_result["location"] = COMMON_CITIES.get(loc.lower(), loc)
+        return llm_result
+
+    # Tier 2 — Regex / keyword fallback
+    result = _understand_query_fallback(question)
+    result["source"] = "fallback"
+    return result
