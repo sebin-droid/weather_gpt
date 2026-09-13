@@ -6,11 +6,11 @@ Endpoints:
   GET  /chat?question=...&lang=...            ← backward-compatible wrapper
 
 Flow (POST):
-  1. resolve_conversation_context()  — detect follow-ups, resolve location from history
-  2. get_location()                  — geocode resolved city name
-  3. get_current_weather() / get_forecast()
-  4. make_friendly_answer()          — LLM with history context
-  5. _template_answer() fallback     — if LLM unavailable
+  1. _classify_message()            — greetings, thanks, chit-chat
+  2. resolve_conversation_context() — follow-up detection + location/intent/time inheritance
+  3. Reuse previous weather data OR fetch fresh data
+  4. make_friendly_answer()          — Qwen3-8B → Groq fallback
+  5. _template_answer()              — last resort if both LLMs unavailable
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from services.context_service import resolve_conversation_context
 from services.location_service import get_location
 from services.weather_service import get_current_weather, get_forecast
 from services.translation_service import translate_text
-from services.llm_service import make_friendly_answer, _call_groq
+from services.llm_service import make_friendly_answer, _call_llm
 
 router = APIRouter()
 
@@ -33,7 +33,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class HistoryMessage(BaseModel):
-    role: str        # "user" | "assistant"
+    role: str
     content: str
     location: Optional[str] = None
     weather_data: Optional[Any] = None   # dict (current) OR list (forecast)
@@ -63,12 +63,13 @@ _THANKS = {
 
 _ABOUT = {
     "who are you", "what are you", "what can you do", "help",
-    "what is weathergpt", "tell me about yourself",
+    "what is weathergpt", "tell me about yourself", "what do you do",
+    "what are your capabilities", "how do you work",
 }
 
-_FAREWELLS = {"bye", "goodbye", "see you", "cya", "take care", "later"}
+_FAREWELLS = {"bye", "goodbye", "see you", "cya", "take care", "later", "good bye"}
 
-# Phrases that should PASS THROUGH to context resolution (not caught as chit-chat)
+# These ALWAYS pass through to weather/context handling — never caught as chit-chat
 _PASSTHROUGH = {
     "more", "tell more", "tell me more", "elaborate", "explain", "describe",
     "describe more", "details", "more details", "what else", "anything else",
@@ -77,13 +78,15 @@ _PASSTHROUGH = {
     "next week", "weekend", "what about tomorrow", "how about tomorrow",
     "will it rain", "is it hot", "is it cold", "is it windy", "is it humid",
     "compare", "compare with tomorrow", "show me more", "tell me",
+    "the situation", "situation", "umbrella", "travel", "go out", "outside",
 }
 
 
 def _classify_message(text: str) -> str | None:
+    """Returns chit-chat category or None (pass through to weather/context)."""
     t = text.lower().strip().rstrip("!.,?")
 
-    # Pass-through first — these go to weather/context handling
+    # Pass-through: these go straight to context resolution
     if t in _PASSTHROUGH or any(t.startswith(p) for p in _PASSTHROUGH):
         return None
 
@@ -93,14 +96,15 @@ def _classify_message(text: str) -> str | None:
         return "thanks"
     if t in _FAREWELLS:
         return "farewell"
-    if t in _ABOUT or any(t in a for a in _ABOUT):
+    if t in _ABOUT or any(t == a or t.startswith(a) for a in _ABOUT):
         return "about"
 
     # Very short messages with no weather keywords → chit-chat
     weather_hints = {
         "weather", "rain", "temperature", "wind", "humidity", "forecast",
         "hot", "cold", "sunny", "cloudy", "storm", "flood", "snow", "climate",
-        "more", "tell", "describe", "tomorrow", "today", "week",
+        "more", "tell", "describe", "tomorrow", "today", "week", "outside",
+        "umbrella", "travel",
     }
     words = set(t.split())
     if len(words) <= 2 and not words.intersection(weather_hints):
@@ -109,6 +113,7 @@ def _classify_message(text: str) -> str | None:
 
 
 def _small_talk_reply(category: str, question: str, lang: str) -> str:
+    """Generate a warm reply for non-weather messages (LLM or canned)."""
     canned = {
         "greeting": (
             "👋 Hello! I'm WeatherGPT — your AI weather assistant. "
@@ -119,8 +124,9 @@ def _small_talk_reply(category: str, question: str, lang: str) -> str:
         "farewell": "👋 Goodbye! Stay weather-safe out there!",
         "about": (
             "🌦️ I'm WeatherGPT — an AI-powered weather assistant. "
-            "I can tell you current weather, forecasts, temperature, wind, humidity, "
-            "and more for cities across India and the world. Just ask!"
+            "I can tell you current weather conditions, rainfall forecasts, temperature, "
+            "wind speed, humidity, and travel advice for cities across India and the world. "
+            "Just ask naturally — no need for specific commands!"
         ),
         "chit-chat": (
             "😊 I'm WeatherGPT, specialised in weather! "
@@ -130,39 +136,43 @@ def _small_talk_reply(category: str, question: str, lang: str) -> str:
     system = (
         "You are WeatherGPT, a friendly AI weather assistant. "
         "The user sent a non-weather message. Reply warmly in 1-2 sentences, "
-        "introduce yourself briefly if needed, and gently guide them to ask a weather question. "
+        "introduce yourself if needed, and guide them to ask a weather question. "
         f"Respond in the language with ISO code '{lang}'."
     )
-    llm_reply = _call_groq(
+    llm_reply = _call_llm(
         [{"role": "system", "content": system}, {"role": "user", "content": question}],
         max_tokens=120,
+        temperature=0.4,
     )
     if llm_reply:
         return llm_reply.strip()
     reply = canned.get(category, canned["chit-chat"])
     if lang != "en":
-        reply = translate_text(reply, target_lang=lang)
+        try:
+            reply = translate_text(reply, target_lang=lang)
+        except Exception:
+            pass
     return reply
 
 
 # ---------------------------------------------------------------------------
-# Template answer fallback (used when LLM is unavailable)
+# Template answer fallback (used when BOTH LLMs are unavailable)
 # ---------------------------------------------------------------------------
 
 def _template_answer(
     intent: str,
     weather_variable: str,
     time: str,
-    weather_data: dict | list,
+    weather_data: Any,
     city: str,
 ) -> str:
-    """Human-friendly template answers for when the LLM is unavailable."""
+    """Human-friendly template answers — last resort when LLMs are down."""
 
     # Forecast
-    if intent == "forecast" and isinstance(weather_data, list):
+    if intent == "forecast" and isinstance(weather_data, list) and weather_data:
         if time == "tomorrow" and len(weather_data) > 1:
             day = weather_data[1]
-        elif time == "weekend" and len(weather_data) > 5:
+        elif time in ("weekend",) and len(weather_data) > 5:
             day = weather_data[5]
         else:
             day = weather_data[0]
@@ -173,7 +183,7 @@ def _template_answer(
             f"temperatures {day['min_temperature']}–{day['max_temperature']} °C, {rain_str}."
         )
 
-    # Current weather (dict)
+    # Current weather
     if not isinstance(weather_data, dict):
         return f"Weather data for {city} is unavailable right now."
 
@@ -194,7 +204,6 @@ def _template_answer(
     if weather_variable == "humidity":
         return f"The humidity in {city} is currently {humidity}%."
 
-    # General
     rain_str = f"{precip} mm precipitation" if precip > 0 else "no precipitation"
     return (
         f"In {city}: {condition}, {temp} °C, "
@@ -206,43 +215,45 @@ def _template_answer(
 # Core chat logic (shared by both GET and POST endpoints)
 # ---------------------------------------------------------------------------
 
-def _process_chat(
-    question: str,
-    lang: str,
-    history: list[dict],
-) -> dict[str, Any]:
+def _process_chat(question: str, lang: str, history: list[dict]) -> dict[str, Any]:
     """
-    Shared logic for both GET and POST endpoints.
+    Main chat handler. Returns a JSON-serialisable response dict.
 
-    Returns a response dict suitable for JSON serialisation.
+    Steps:
+      0. Greeting / chit-chat check
+      1. Resolve full conversation context
+      2. Handle missing location gracefully
+      3. Geocode city
+      4. Decide: reuse previous weather data OR fetch fresh
+      5. Generate LLM answer (Qwen → Groq → template fallback)
     """
 
-    # Step 0 — Greetings / small-talk (only when no history context)
+    # Step 0 — Greetings / small-talk
     category = _classify_message(question)
     if category:
         reply = _small_talk_reply(category, question, lang)
         return {"question": question, "answer_text": reply, "intent": category}
 
-    # Step 1 — Resolve conversation context (follow-up detection + location inheritance)
+    # Step 1 — Resolve conversation context
     ctx = resolve_conversation_context(question, lang, history)
 
     # Step 2 — Handle missing location
     if ctx.resolved_location is None:
         if ctx.is_follow_up:
-            # Follow-up but no previous location at all → politely ask
             msg = "Which city or area are you asking about?"
-            if lang != "en":
-                msg = translate_text(msg, target_lang=lang)
         else:
             msg = (
                 "I couldn't find a city name in your question. "
                 "Try: 'What's the weather in Mumbai?' or 'Will it rain in Delhi tomorrow?'"
             )
-            if lang != "en":
+        if lang != "en":
+            try:
                 msg = translate_text(msg, target_lang=lang)
+            except Exception:
+                pass
         return {"question": question, "answer_text": msg, "intent": "unknown"}
 
-    # Step 3 — Geocode the resolved city
+    # Step 3 — Geocode
     location = get_location(ctx.resolved_location)
     if location is None:
         err_msg = (
@@ -250,28 +261,36 @@ def _process_chat(
             "Please check the city name."
         )
         if lang != "en":
-            err_msg = translate_text(err_msg, target_lang=lang)
+            try:
+                err_msg = translate_text(err_msg, target_lang=lang)
+            except Exception:
+                pass
         raise HTTPException(status_code=404, detail=err_msg)
 
     city = location["city"]
 
     # Step 4 — Fetch weather data
+    # For follow-ups that inherit a "forecast" intent, always fetch forecast.
+    # For "describe more" after a forecast question, we already have previous
+    # forecast data — but fetching fresh is fine and keeps data up-to-date.
     if ctx.intent == "forecast":
         weather_data = get_forecast(location["latitude"], location["longitude"])
     else:
         weather_data = get_current_weather(location["latitude"], location["longitude"])
 
-    # Step 5 — Generate answer (LLM preferred, template fallback)
+    # Step 5 — Generate answer
     answer_text = make_friendly_answer(
         weather_data=weather_data,
         city=city,
         question=question,
         lang=lang,
         intent=ctx.intent,
+        time=ctx.time,
         history=history,
         is_follow_up=ctx.is_follow_up,
     )
 
+    # Template fallback if both LLMs are unavailable
     if not answer_text:
         answer_text = _template_answer(
             intent=ctx.intent,
@@ -281,17 +300,20 @@ def _process_chat(
             city=city,
         )
         if lang != "en":
-            answer_text = translate_text(answer_text, target_lang=lang)
+            try:
+                answer_text = translate_text(answer_text, target_lang=lang)
+            except Exception:
+                pass
 
-    return {
+    # Build response
+    response = {
         "question": question,
         "location": location,
         "intent": ctx.intent,
         "is_follow_up": ctx.is_follow_up,
-        "nlp_source": "context",
         "answer_text": answer_text,
         "data": weather_data,
-        # Metadata for the frontend to store in history
+        # Metadata stored in history by the frontend for context resolution
         "_ctx": {
             "location": city,
             "intent": ctx.intent,
@@ -299,6 +321,7 @@ def _process_chat(
             "time": ctx.time,
         },
     }
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -307,18 +330,12 @@ def _process_chat(
 
 @router.post("/chat")
 def chat_post(body: ChatRequest):
-    """
-    Primary chat endpoint.
-    Accepts { question, lang, history[] } as JSON body.
-    """
+    """Primary endpoint. Accepts { question, lang, history[] } as JSON."""
     history = [h.model_dump() for h in body.history]
     return _process_chat(body.question, body.lang, history)
 
 
 @router.get("/chat")
 def chat_get(question: str, lang: str = "en"):
-    """
-    Backward-compatible GET endpoint.
-    Works exactly as before — no history context, no breaking changes.
-    """
+    """Backward-compatible GET endpoint — no history context."""
     return _process_chat(question, lang, [])
