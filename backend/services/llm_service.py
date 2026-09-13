@@ -1,3 +1,15 @@
+"""
+llm_service.py
+--------------
+LLM integration for WeatherGPT using Groq API.
+
+Functions:
+  _call_groq()             — low-level Groq API call
+  extract_query_info()     — parse intent/location/time/variable from question
+  build_llm_messages()     — construct message list with conversation history
+  make_friendly_answer()   — generate a conversational weather answer
+"""
+
 import os
 import json
 import requests
@@ -42,14 +54,9 @@ def extract_query_info(question: str) -> dict | None:
     """
     Ask the LLM to extract structured query information from a raw user question.
 
-    Returns a dict like:
-        {
-            "intent": "forecast" | "rain" | "temperature" | "wind" | "humidity" | "current_weather",
-            "location": "Mumbai" | null,
-            "time": "now" | "today" | "tomorrow" | "next_week" | "tonight" | "weekend",
-            "weather_variable": "rain" | "temperature" | "wind" | "humidity" | "general"
-        }
-    Returns None if the LLM is unavailable or returns unparseable output.
+    Returns:
+        { intent, location, time, weather_variable }
+    or None if LLM unavailable.
     """
     system_prompt = (
         "You are a weather query parser. Extract structured information from a user's weather question.\n"
@@ -88,19 +95,22 @@ def extract_query_info(question: str) -> dict | None:
     return None
 
 
-def make_friendly_answer(
-    weather_data: dict,
-    city: str,
+def build_llm_messages(
     question: str,
-    lang: str = "en",
-    intent: str = "current_weather",
-) -> str | None:
+    city: str,
+    weather_data: dict,
+    intent: str,
+    lang: str,
+    history: list[dict],
+    is_follow_up: bool = False,
+) -> list[dict]:
     """
-    Generate a rich, natural, conversational answer given weather data.
+    Build the messages array for the Groq chat completion call.
 
-    - Uses the full weather payload to give a complete picture.
-    - Interprets numeric values into human language (e.g. 0.0mm = no rain).
-    - Responds directly in the user's language when lang != 'en'.
+    Includes:
+    - A rich system prompt with ground rules
+    - Last N conversation turns (for context)
+    - The current user question with weather data injected
     """
     lang_instruction = (
         f"Respond in the language with ISO code '{lang}'."
@@ -108,33 +118,70 @@ def make_friendly_answer(
         else "Respond in English."
     )
 
-    # Build a richer system prompt so the LLM gives useful answers even for
-    # edge cases like "0.0 mm precipitation" (= currently not raining).
     system_prompt = (
-        "You are WeatherGPT, a friendly and knowledgeable AI weather assistant. "
-        "Answer the user's weather question conversationally using the provided live data. "
-        "Guidelines:\n"
-        "- If precipitation is 0.0 mm, say it is NOT raining / no rain currently.\n"
-        "- For 'will it rain' questions, check today's or tomorrow's forecast rain_sum — if 0 say unlikely, if >0 say how much.\n"
-        "- Give a complete, helpful answer: mention condition, temperature, and any relevant details.\n"
-        "- Use natural human language — avoid raw numbers without units or context.\n"
-        "- Add a short practical tip if relevant (e.g. carry an umbrella, stay hydrated).\n"
-        "- Keep the answer to 2-3 sentences max.\n"
-        f"- {lang_instruction}"
-    )
-
-    user_prompt = (
-        f"User asked: '{question}'\n"
-        f"City: {city}\n"
-        f"Intent: {intent}\n"
+        "You are WeatherGPT, a friendly, knowledgeable AI weather assistant.\n\n"
+        "RULES:\n"
+        "1. Answer naturally and conversationally — 2 to 4 sentences max.\n"
+        "2. Use ONLY the weather data provided below. Do NOT invent or guess values.\n"
+        "3. If precipitation is 0.0 mm → say it is not currently raining / no rain expected.\n"
+        "4. If the user is asking a follow-up, use the previous conversation context.\n"
+        "5. Do NOT ask for the city name if it is already clear from context.\n"
+        "6. Do NOT mention internal system names like 'intent', 'context', 'FOLLOW_UP'.\n"
+        "7. Do NOT say 'according to the context' or 'based on your previous question'.\n"
+        "8. Do NOT repeat information the user just read unless they asked for it.\n"
+        "9. Add a short practical tip where relevant (umbrella, hydration, etc.).\n"
+        "10. For 'describe more' / 'tell me more' → give a richer 3-4 sentence summary.\n"
+        f"11. {lang_instruction}\n\n"
+        f"Current city: {city}\n"
+        f"Current intent: {intent}\n"
         f"Live weather data: {json.dumps(weather_data, ensure_ascii=False)}"
     )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-    answer = _call_groq(messages, max_tokens=250)
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+
+    # Inject last N conversation turns (for context window)
+    # Use only content field from history; skip metadata fields
+    for turn in history[-8:]:
+        role = turn.get("role", "user")
+        content = turn.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+
+    # Current question
+    messages.append({"role": "user", "content": question})
+
+    return messages
+
+
+def make_friendly_answer(
+    weather_data: dict,
+    city: str,
+    question: str,
+    lang: str = "en",
+    intent: str = "current_weather",
+    history: list[dict] | None = None,
+    is_follow_up: bool = False,
+) -> str | None:
+    """
+    Generate a natural, conversational answer given weather data.
+
+    Passes conversation history to the LLM for contextual responses.
+    Falls back gracefully if the LLM is unavailable.
+    """
+    if history is None:
+        history = []
+
+    messages = build_llm_messages(
+        question=question,
+        city=city,
+        weather_data=weather_data,
+        intent=intent,
+        lang=lang,
+        history=history,
+        is_follow_up=is_follow_up,
+    )
+
+    answer = _call_groq(messages, max_tokens=300)
     if answer:
         return answer.strip()
     return None
