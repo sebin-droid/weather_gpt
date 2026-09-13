@@ -31,6 +31,9 @@ _FOLLOWUP_PHRASES: set[str] = {
     "brief me", "brief", "summary", "summarize", "details",
     "tell me about the situation", "more about the situation",
     "what does that mean", "what does this mean",
+    "in detail", "in detailed manner", "detailed manner", "detailed",
+    "explain simple", "explain simply", "explain simple way", "explain in simple way",
+    "in a simple way", "in simple words", "simply", "simple way",
     # Reference words
     "why", "how", "how so", "what else", "anything else",
     "what about it", "it", "this", "that", "there", "here",
