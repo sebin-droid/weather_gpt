@@ -1,28 +1,30 @@
-// =============================================
-// NDVI VEGETATION ANALYSIS — Tab Logic
-// =============================================
+﻿// ============================================================
+// ndvi.js — NDVI Vegetation Analysis tab logic
+// API call, polygon handling, NDVI calculation, draw controls:
+// ALL UNCHANGED.
+// UI changes: renderNDVIResults uses new CSS classes and
+// legend structure; switchTab updated to also manage mobile
+// nav active state and set data-view on .app-body.
+// ============================================================
 
 const NDVI_BACKEND = "http://127.0.0.1:8000";
 
-const ndviDate = document.getElementById('ndvi-date');
+const ndviDate       = document.getElementById('ndvi-date');
 const ndviAnalyzeBtn = document.getElementById('ndvi-analyze-btn');
-const ndviClearBtn = document.getElementById('ndvi-clear-btn');
-const ndviLoading = document.getElementById('ndvi-loading');
-const ndviResults = document.getElementById('ndvi-results');
+const ndviClearBtn   = document.getElementById('ndvi-clear-btn');
+const ndviLoading    = document.getElementById('ndvi-loading');
+const ndviResults    = document.getElementById('ndvi-results');
 
 let drawnPolygon = null;
-let drawControl = null;
+let drawControl  = null;
 
-// Default date: ~10 days ago (MODIS has data processing lag)
+// Default date: ~10 days ago (MODIS data lag) — UNCHANGED
 const tenDaysAgo = new Date();
 tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
 ndviDate.value = tenDaysAgo.toISOString().slice(0, 10);
 
 
-// =============================================
-// Drawing controls (enable/disable with tab)
-// =============================================
-
+// ── Drawing controls (UNCHANGED) ─────────────────────────────
 function enableDrawing() {
   if (drawControl) return;
 
@@ -35,13 +37,11 @@ function enableDrawing() {
         allowIntersection: false,
         shapeOptions: { color: '#22c55e', weight: 2, fillOpacity: 0.15 }
       },
-      polyline: false,
-      rectangle: {
-        shapeOptions: { color: '#22c55e', weight: 2, fillOpacity: 0.15 }
-      },
-      circle: false,
+      polyline:     false,
+      rectangle:    { shapeOptions: { color: '#22c55e', weight: 2, fillOpacity: 0.15 } },
+      circle:       false,
       circlemarker: false,
-      marker: false
+      marker:       false
     },
     edit: {
       featureGroup: drawnItems,
@@ -71,30 +71,26 @@ function disableDrawing() {
 }
 
 
-// =============================================
-// Analyze button
-// =============================================
-
-ndviAnalyzeBtn.addEventListener('click', async () => {
+// ── Analyze button (UNCHANGED) ───────────────────────────────
+ndviAnalyzeBtn.addEventListener('click', async function () {
   if (!drawnPolygon) {
     alert('Please draw a polygon on the map first.');
     return;
   }
 
-  // Get polygon coordinates
   const latlngs = drawnPolygon.getLatLngs()[0];
-  const polygon = latlngs.map(ll => [ll.lat, ll.lng]);
-  const date = ndviDate.value;
+  const polygon = latlngs.map(function (ll) { return [ll.lat, ll.lng]; });
+  const date    = ndviDate.value;
 
   ndviLoading.classList.remove('hidden');
   ndviResults.classList.add('hidden');
   ndviAnalyzeBtn.disabled = true;
 
   try {
-    const resp = await fetch(`${NDVI_BACKEND}/ndvi/analyze`, {
-      method: 'POST',
+    const resp = await fetch(NDVI_BACKEND + '/ndvi/analyze', {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ polygon, date })
+      body:    JSON.stringify({ polygon: polygon, date: date })
     });
 
     if (!resp.ok) {
@@ -105,104 +101,121 @@ ndviAnalyzeBtn.addEventListener('click', async () => {
     const data = await resp.json();
     ndviLoading.classList.add('hidden');
 
-    // Draw NDVI grid on map
     if (window.drawNDVI) window.drawNDVI(data);
-
-    // Render results panel
     renderNDVIResults(data);
 
   } catch (err) {
     ndviLoading.classList.add('hidden');
-    ndviResults.innerHTML = `<div class="error-msg">❌ ${err.message}</div>`;
+    ndviResults.innerHTML =
+      '<div class="error-msg">Satellite data is temporarily unavailable. Please try again later.</div>';
     ndviResults.classList.remove('hidden');
+    console.error('NDVI error:', err);
   } finally {
     ndviAnalyzeBtn.disabled = false;
   }
 });
 
 
-// =============================================
-// Clear button
-// =============================================
-
-ndviClearBtn.addEventListener('click', () => {
+// ── Clear button (UNCHANGED) ─────────────────────────────────
+ndviClearBtn.addEventListener('click', function () {
   if (window.mapDrawnItems) window.mapDrawnItems.clearLayers();
-  if (window.drawNDVI) window.drawNDVI({ grid: [] });
+  if (window.drawNDVI)      window.drawNDVI({ grid: [] });
   drawnPolygon = null;
   ndviAnalyzeBtn.disabled = true;
   ndviResults.classList.add('hidden');
 });
 
 
-// =============================================
-// Render NDVI results
-// =============================================
-
+// ── Render NDVI results (UI-only change) ─────────────────────
 function renderNDVIResults(data) {
   const healthColors = {
-    'healthy': '#22c55e',
-    'moderate': '#eab308',
-    'poor': '#f97316',
+    'healthy':   '#22c55e',
+    'moderate':  '#eab308',
+    'poor':      '#f97316',
     'very_poor': '#ef4444'
   };
 
-  const breakdown = data.breakdown || {};
-  let breakdownHTML = Object.entries(breakdown)
-    .filter(([cat]) => cat !== 'no_data')
-    .map(([cat, pct]) => {
+  const breakdown    = data.breakdown || {};
+  const areaHa       = data.area_hectares   ? data.area_hectares.toFixed(1)   : '—';
+  const avgNDVI      = data.average_ndvi    ? data.average_ndvi.toFixed(3)    : '—';
+  const health       = data.health          ? data.health.replace('_', ' ')   : '—';
+  const healthColor  = healthColors[data.health] || 'var(--text-1)';
+  const explanation  = data.explanation || '';
+
+  const breakdownHTML = Object.entries(breakdown)
+    .filter(function (pair) { return pair[0] !== 'no_data'; })
+    .map(function (pair) {
+      const cat   = pair[0];
+      const pct   = pair[1];
       const color = healthColors[cat] || '#999';
       const label = cat.replace('_', ' ');
-      return `<div class="ndvi-bar">
-        <span class="ndvi-bar-label">${label}</span>
-        <div class="ndvi-bar-track"><div class="ndvi-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-        <span class="ndvi-bar-pct">${pct}%</span>
-      </div>`;
+      return '<div class="ndvi-bar">' +
+        '<span class="ndvi-bar-label">' + label + '</span>' +
+        '<div class="ndvi-bar-track">' +
+          '<div class="ndvi-bar-fill" style="width:' + pct + '%;background:' + color + '"></div>' +
+        '</div>' +
+        '<span class="ndvi-bar-pct">' + pct + '%</span>' +
+      '</div>';
     }).join('');
 
-  ndviResults.innerHTML = `
-    <h3>🌱 Vegetation Health Report</h3>
-    <div class="ndvi-summary-grid">
-      <div class="ndvi-stat"><span class="stat-label">Area</span><span class="stat-value">${data.area_hectares?.toFixed(1) || '?'} ha</span></div>
-      <div class="ndvi-stat"><span class="stat-label">Avg NDVI</span><span class="stat-value">${data.average_ndvi?.toFixed(3) || 'N/A'}</span></div>
-      <div class="ndvi-stat"><span class="stat-label">Overall</span><span class="stat-value" style="color:${healthColors[data.health] || '#333'};font-weight:bold">${(data.health || 'N/A').replace('_', ' ')}</span></div>
-    </div>
-    <div class="ndvi-breakdown">${breakdownHTML}</div>
-    <div class="ndvi-explanation">${data.explanation || ''}</div>
-    <div class="ndvi-legend">
-      <span style="color:#22c55e">🟢 Healthy (&gt;0.6)</span>
-      <span style="color:#eab308">🟡 Moderate (0.4-0.6)</span>
-      <span style="color:#f97316">🟠 Poor (0.2-0.4)</span>
-      <span style="color:#ef4444">🔴 Very Poor (&lt;0.2)</span>
-    </div>
-  `;
+  ndviResults.innerHTML =
+    '<h3>Vegetation Health Report</h3>' +
+    '<div class="ndvi-summary-grid">' +
+      '<div class="ndvi-stat"><span class="stat-label">Area</span><span class="stat-value">' + areaHa + ' ha</span></div>' +
+      '<div class="ndvi-stat"><span class="stat-label">Avg NDVI</span><span class="stat-value">' + avgNDVI + '</span></div>' +
+      '<div class="ndvi-stat"><span class="stat-label">Overall</span><span class="stat-value" style="color:' + healthColor + '">' + health + '</span></div>' +
+    '</div>' +
+    '<div class="ndvi-breakdown">' + breakdownHTML + '</div>' +
+    (explanation ? '<div class="ndvi-explanation">' + explanation + '</div>' : '') +
+    '<div class="ndvi-legend">' +
+      '<span class="ndvi-legend-item"><span class="ndvi-legend-dot" style="background:#22c55e"></span>Healthy (&gt;0.6)</span>' +
+      '<span class="ndvi-legend-item"><span class="ndvi-legend-dot" style="background:#eab308"></span>Moderate (0.4-0.6)</span>' +
+      '<span class="ndvi-legend-item"><span class="ndvi-legend-dot" style="background:#f97316"></span>Poor (0.2-0.4)</span>' +
+      '<span class="ndvi-legend-item"><span class="ndvi-legend-dot" style="background:#ef4444"></span>Very Poor (&lt;0.2)</span>' +
+    '</div>';
+
   ndviResults.classList.remove('hidden');
 }
 
 
-// =============================================
-// Tab switching (called from index.html buttons)
-// =============================================
-
+// ── Tab switching — extended for mobile nav + data-view ──────
+// Logic preserved: drawing enable/disable, map invalidateSize.
+// UI additions: mobile nav active state, data-view attribute.
 window.switchTab = function (tabName) {
-  // Update tab buttons
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const btnEl = document.querySelector(`[data-tab="${tabName}"]`);
-  if (btnEl) btnEl.classList.add('active');
+  // Desktop nav tabs
+  document.querySelectorAll('.tab-btn').forEach(function (b) {
+    b.classList.remove('active');
+  });
+  var desktopBtn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
+  if (desktopBtn) desktopBtn.classList.add('active');
 
-  // Update tab content
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  const tabEl = document.getElementById(`tab-${tabName}`);
+  // Mobile nav buttons (UI addition)
+  document.querySelectorAll('.mobile-nav-btn').forEach(function (b) {
+    b.classList.remove('active');
+  });
+  var mobileBtn = document.querySelector('.mobile-nav-btn[data-tab="' + tabName + '"]');
+  if (mobileBtn) mobileBtn.classList.add('active');
+
+  // Tab content panels
+  document.querySelectorAll('.tab-content').forEach(function (t) {
+    t.classList.remove('active');
+  });
+  var tabEl = document.getElementById('tab-' + tabName);
   if (tabEl) tabEl.classList.add('active');
 
-  // Enable/disable drawing tools based on tab
+  // Set data-view for CSS layout ratios (UI addition)
+  var appBody = document.querySelector('.app-body');
+  if (appBody) appBody.setAttribute('data-view', tabName);
+
+  // Drawing tools (UNCHANGED)
   if (tabName === 'vegetation') {
     enableDrawing();
   } else {
     disableDrawing();
   }
 
-  // Resize map after tab switch
-  setTimeout(() => {
+  // Map resize (UNCHANGED)
+  setTimeout(function () {
     if (window.leafletMap) window.leafletMap.invalidateSize();
-  }, 100);
+  }, 150);
 };

@@ -1,115 +1,248 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WeatherGPT</title>
+  <title>WeatherGPT — AI-Powered Weather Intelligence</title>
+  <meta name="description" content="Ask WeatherGPT about weather, forecasts, route conditions, and vegetation health for any location in India.">
   <link rel="stylesheet" href="css/style.css">
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Leaflet Draw CSS (for NDVI polygon drawing) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
 </head>
 <body>
-  <div class="app-container">
-    <header class="app-header">
-      <div class="title-row">
-        <h1>🌦️ WeatherGPT</h1>
+<div class="app-shell">
+
+  <!-- ── HEADER ─────────────────────────────────────── -->
+  <header class="app-header">
+    <span class="header-brand">
+      <i data-feather="cloud-rain"></i>
+      <span>WeatherGPT</span>
+    </span>
+
+    <div class="header-controls">
+      <!-- Language selector -->
+      <div class="header-lang">
+        <i data-feather="globe"></i>
+        <select id="lang-select" aria-label="Select output language">
+          <option value="en">EN</option>
+          <option value="ml">ML</option>
+          <option value="hi">HI</option>
+        </select>
       </div>
-      <p class="subtitle">AI-powered geospatial weather intelligence platform</p>
-    </header>
 
-    <!-- Tab Navigation -->
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="weather" onclick="switchTab('weather')">🌦️ Weather</button>
-      <button class="tab-btn" data-tab="route" onclick="switchTab('route')">🛣️ Route</button>
-      <button class="tab-btn" data-tab="vegetation" onclick="switchTab('vegetation')">🌱 Vegetation</button>
+      <!-- Theme toggle -->
+      <button id="theme-toggle" aria-label="Toggle light / dark mode" title="Toggle theme">
+        <i data-feather="sun"  class="icon-sun"></i>
+        <i data-feather="moon" class="icon-moon"></i>
+      </button>
     </div>
+  </header>
 
-    <!-- Dynamic Extreme Weather Alert Banner -->
-    <div id="alert-banner" class="alert-banner hidden" role="alert"></div>
+  <!-- ── DESKTOP NAV TABS ───────────────────────────── -->
+  <nav class="app-nav" aria-label="Main navigation">
+    <button class="tab-btn active" data-tab="weather"    onclick="switchTab('weather')">
+      <i data-feather="message-circle"></i> Weather
+    </button>
+    <button class="tab-btn" data-tab="map"         onclick="switchTab('map')">
+      <i data-feather="map"></i> Map
+    </button>
+    <button class="tab-btn" data-tab="route"       onclick="switchTab('route')">
+      <i data-feather="navigation"></i> Route
+    </button>
+    <button class="tab-btn" data-tab="vegetation"  onclick="switchTab('vegetation')">
+      <i data-feather="activity"></i> Vegetation
+    </button>
+  </nav>
 
-    <!-- TAB 1: Weather (existing chat interface + Person 1's voice & language features) -->
-    <div id="tab-weather" class="tab-content active">
-      <div id="chat-window" class="chat-window">
-        <div class="msg bot">
-          👋 Hello! Ask me about the weather in any city (e.g., <em>"Will it rain in Kochi tomorrow?"</em>).
-        </div>
-      </div>
-      <!-- Person 1's Voice (mic) + Multilanguage controls — always shown in Weather tab -->
-      <div class="weather-toolbar">
-        <div id="voice-controls" class="voice-controls"></div>
-        <div class="lang-wrap">
-          <label for="lang-select" class="lang-label">🌐 Language:</label>
-          <select id="lang-select" aria-label="Select Language">
-            <option value="en">English</option>
-            <option value="ml">Malayalam (മലയാളം)</option>
-            <option value="hi">Hindi (हिन्दी)</option>
-          </select>
-        </div>
-      </div>
-      <!-- Chat Input -->
-      <form id="chat-form" class="input-row" onsubmit="return false;">
-        <input
-          type="text"
-          id="user-input"
-          placeholder="Ask about weather, rainfall, or travel advice..."
-          autocomplete="off"
-        />
-        <button type="submit" id="send-btn">Send</button>
-      </form>
-    </div>
-
-    <!-- TAB 2: Route Weather -->
-    <div id="tab-route" class="tab-content">
-      <div class="route-form">
-        <div class="route-inputs">
-          <input type="text" id="route-origin" placeholder="📍 From (e.g., Kanyakumari)" />
-          <span class="route-arrow">→</span>
-          <input type="text" id="route-dest" placeholder="📍 To (e.g., New Delhi)" />
-        </div>
-        <div class="route-options">
-          <input type="datetime-local" id="route-time" />
-          <button id="route-btn">🗺️ Get Route Weather</button>
-        </div>
-      </div>
-      <div id="route-loading" class="loading-panel hidden">⏳ Calculating route and fetching weather data...</div>
-      <div id="route-summary" class="route-summary hidden"></div>
-      <div id="route-zones" class="route-zones hidden"></div>
-    </div>
-
-    <!-- TAB 3: Vegetation (NDVI) -->
-    <div id="tab-vegetation" class="tab-content">
-      <div class="ndvi-controls">
-        <p>🌱 Draw a polygon on the map to analyze vegetation health using satellite data</p>
-        <div class="ndvi-options">
-          <input type="date" id="ndvi-date" />
-          <button id="ndvi-analyze-btn" disabled>📊 Analyze NDVI</button>
-          <button id="ndvi-clear-btn">🗑️ Clear</button>
-        </div>
-      </div>
-      <div id="ndvi-loading" class="loading-panel hidden">🛰️ Fetching satellite data...</div>
-      <div id="ndvi-results" class="ndvi-results hidden"></div>
-    </div>
-
-    <!-- GIS Map (always visible across all tabs) -->
-    <div id="map" class="map-viewport"></div>
-
-    <!-- Map Controls / Legend -->
-    <div id="map-controls" class="map-controls">
-      <div id="map-legend" class="map-legend hidden"></div>
-    </div>
+  <!-- ── ALERT BANNER (hidden by default) ──────────── -->
+  <div id="alert-banner" class="alert-banner hidden" role="alert" aria-live="assertive">
+    <i data-feather="alert-triangle"></i>
+    <span id="alert-text"></span>
+    <button id="alert-close" aria-label="Dismiss alert">
+      <i data-feather="x"></i>
+    </button>
   </div>
 
-  <!-- Third-party Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Leaflet Draw (for NDVI polygon drawing) -->
-  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-  <!-- App Scripts -->
-  <script src="js/map.js"></script>
-  <script src="js/chat.js"></script>
-  <script src="js/voice.js"></script>
-  <script src="js/route.js"></script>
-  <script src="js/ndvi.js"></script>
+  <!-- ── MAIN BODY: content panel + map ────────────── -->
+  <div class="app-body" data-view="weather">
+
+    <!-- Content panel (switches per tab) -->
+    <div class="content-panel">
+
+      <!-- TAB: Weather / Chat ─────────────────────── -->
+      <div id="tab-weather" class="tab-content active">
+
+        <!-- Quick-action chips -->
+        <div class="quick-actions" aria-label="Quick actions">
+          <button class="quick-chip" data-query="Will it rain today?">Will it rain today?</button>
+          <button class="quick-chip" data-query="Are there any weather alerts?">Weather alerts</button>
+          <button class="quick-chip" data-query="What is this week's forecast?">Weekly forecast</button>
+        </div>
+
+        <!-- Chat window -->
+        <div id="chat-window" class="chat-window" role="log" aria-live="polite">
+          <div class="msg bot">
+            <span class="msg-avatar" aria-hidden="true"><i data-feather="cloud-rain"></i></span>
+            <span class="msg-text">Hello! Ask me about the weather in any city (e.g., <em>"Will it rain in Kochi tomorrow?"</em>).</span>
+          </div>
+        </div>
+
+        <!-- Toolbar: voice controls + language fallback -->
+        <div class="weather-toolbar">
+          <div id="voice-controls" class="voice-controls" aria-label="Voice input"></div>
+          <!-- lang-wrap kept here as a fallback on narrow screens -->
+          <div class="lang-wrap" aria-hidden="true">
+            <label for="lang-select-tb" class="lang-label">Lang:</label>
+          </div>
+        </div>
+
+        <!-- Chat input -->
+        <form id="chat-form" class="input-row" onsubmit="return false;" aria-label="Chat input">
+          <input
+            type="text"
+            id="user-input"
+            placeholder="Ask about weather, rainfall, or travel advice..."
+            autocomplete="off"
+            aria-label="Type your weather question"
+          >
+          <button type="submit" id="send-btn" aria-label="Send message">
+            <i data-feather="send"></i>
+          </button>
+        </form>
+
+      </div>
+      <!-- /tab-weather -->
+
+      <!-- TAB: Map ─────────────────────────────────── -->
+      <div id="tab-map" class="tab-content">
+        <span class="map-toolbar-title">Interactive Map</span>
+      </div>
+
+      <!-- TAB: Route Weather ───────────────────────── -->
+      <div id="tab-route" class="tab-content">
+
+        <div class="route-form">
+          <div class="route-inputs">
+            <input type="text" id="route-origin" placeholder="From (e.g., Kanyakumari)" aria-label="Origin city">
+            <span class="route-arrow" aria-hidden="true"><i data-feather="arrow-down"></i></span>
+            <input type="text" id="route-dest"   placeholder="To (e.g., New Delhi)"     aria-label="Destination city">
+          </div>
+          <div class="route-options">
+            <input type="datetime-local" id="route-time" aria-label="Departure date and time">
+            <button id="route-btn">
+              <i data-feather="navigation"></i>
+              Get Route Weather
+            </button>
+          </div>
+        </div>
+
+        <div id="route-loading" class="loading-panel hidden" aria-live="polite">
+          Calculating route and fetching weather data...
+        </div>
+        <div id="route-summary" class="route-summary hidden"></div>
+        <div id="route-zones"   class="route-zones   hidden"></div>
+
+      </div>
+      <!-- /tab-route -->
+
+      <!-- TAB: Vegetation (NDVI) ───────────────────── -->
+      <div id="tab-vegetation" class="tab-content">
+
+        <div class="ndvi-controls">
+          <p>Draw a polygon on the map to analyze vegetation health using satellite data.</p>
+          <div class="ndvi-options">
+            <input type="date" id="ndvi-date" aria-label="Analysis date">
+            <button id="ndvi-analyze-btn" disabled>
+              <i data-feather="bar-chart-2"></i>
+              Analyze NDVI
+            </button>
+            <button id="ndvi-clear-btn">
+              <i data-feather="trash-2"></i>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div id="ndvi-loading" class="loading-panel hidden" aria-live="polite">
+          Fetching satellite data...
+        </div>
+        <div id="ndvi-results" class="ndvi-results hidden"></div>
+
+      </div>
+      <!-- /tab-vegetation -->
+
+    </div>
+    <!-- /content-panel -->
+
+    <!-- Map section — always in DOM for Leaflet -->
+    <div class="map-section">
+      <div id="map" class="map-viewport" aria-label="Interactive weather map"></div>
+      <div id="map-controls" class="map-controls">
+        <div id="map-legend" class="map-legend hidden"></div>
+      </div>
+    </div>
+
+  </div>
+  <!-- /app-body -->
+
+  <!-- ── MOBILE BOTTOM NAV ─────────────────────────── -->
+  <nav class="mobile-nav" aria-label="Navigation">
+    <button class="mobile-nav-btn active" data-tab="weather"    onclick="switchTab('weather')">
+      <i data-feather="message-circle"></i>
+      <span>Weather</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="map"          onclick="switchTab('map')">
+      <i data-feather="map"></i>
+      <span>Map</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="route"        onclick="switchTab('route')">
+      <i data-feather="navigation"></i>
+      <span>Route</span>
+    </button>
+    <button class="mobile-nav-btn" data-tab="vegetation"   onclick="switchTab('vegetation')">
+      <i data-feather="activity"></i>
+      <span>Farm</span>
+    </button>
+  </nav>
+
+</div>
+<!-- /app-shell -->
+
+<!-- Third-party scripts (loaded before app scripts) -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
+
+<!-- App scripts -->
+<script src="js/theme.js"></script>
+<script src="js/map.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/route.js"></script>
+<script src="js/ndvi.js"></script>
+
+<!-- Activate Feather icons + wire quick chips -->
+<script>
+  feather.replace({ 'stroke-width': 2 });
+
+  // Quick-action chips: send preset query to chat
+  document.querySelectorAll('.quick-chip').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var query = btn.getAttribute('data-query');
+      if (query && typeof sendMessage === 'function') {
+        sendMessage(query);
+      }
+    });
+  });
+
+  // Alert banner close button
+  var alertClose = document.getElementById('alert-close');
+  if (alertClose) {
+    alertClose.addEventListener('click', function() {
+      document.getElementById('alert-banner').classList.add('hidden');
+    });
+  }
+</script>
+
 </body>
 </html>
