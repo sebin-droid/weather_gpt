@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Mic,
   MicOff,
@@ -9,14 +9,21 @@ import {
   Sparkles,
   Navigation,
   Sprout,
-  MessageSquare
+  MessageSquare,
+  Trash2,
+  MousePointer2,
+  Check,
 } from "lucide-react";
 import WeatherMap from "./components/WeatherMap";
+import NDVIReport from "./components/NDVIReport";
+import SatelliteCalendar from "./components/SatelliteCalendar";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("chat"); // "chat" or "route"
+  const [activeTab, setActiveTab] = useState("chat");
+
+  // Chat state
   const [messages, setMessages] = useState([
     {
       sender: "bot",
@@ -30,13 +37,25 @@ export default function App() {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [alertMsg, setAlertMsg] = useState(null);
 
-  // Route & NDVI States
+  // Route state
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [routePath, setRoutePath] = useState(null);
   const [routeWeather, setRouteWeather] = useState(null);
   const [routeError, setRouteError] = useState(null);
-  const [showNdvi, setShowNdvi] = useState(false);
+
+  // NDVI / Vegetation state
+  const [drawnPolygon, setDrawnPolygon] = useState(null);
+  const [drawingPoints, setDrawingPoints] = useState([]);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [polygonAreaHa, setPolygonAreaHa] = useState(null);
+
+  // Satellite availability state
+  const [availableDates, setAvailableDates] = useState([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [selectedObservation, setSelectedObservation] = useState(null);
+
+  // NDVI analysis state
   const [ndviLoading, setNdviLoading] = useState(false);
   const [ndviResult, setNdviResult] = useState(null);
   const [ndviError, setNdviError] = useState(null);
@@ -49,6 +68,9 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  // =============================================
+  // Speech
+  // =============================================
   const speak = (text) => {
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
@@ -59,6 +81,9 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  // =============================================
+  // Chat
+  // =============================================
   const handleSend = async (queryText) => {
     const textToSend = queryText || input;
     if (!textToSend.trim() || loading) return;
@@ -73,11 +98,9 @@ export default function App() {
         `${BACKEND_URL}/chat?question=${encodeURIComponent(userMessage)}&lang=${encodeURIComponent(lang)}`
       );
       const data = await res.json();
-
       const botReply = data.answer_text || data.message || "Could not retrieve weather details.";
       setMessages((prev) => [...prev, { sender: "bot", text: botReply }]);
       speak(botReply);
-
       if (data.location) setCurrentLocation(data.location);
       if (data.alert) setAlertMsg(data.alert);
     } catch {
@@ -90,10 +113,12 @@ export default function App() {
     }
   };
 
+  // =============================================
+  // Route Weather
+  // =============================================
   const handleRouteSearch = async (e) => {
     e.preventDefault();
     if (!origin.trim() || !destination.trim()) return;
-
     setLoading(true);
     setRouteError(null);
     setRouteWeather(null);
@@ -103,7 +128,6 @@ export default function App() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Could not calculate the route.");
-
       const points = (data.route_geometry || []).map(([longitude, latitude]) => [latitude, longitude]);
       if (points.length < 2) throw new Error("The route service returned no map geometry.");
       setRoutePath(points);
@@ -111,30 +135,120 @@ export default function App() {
       setCurrentLocation(data.origin);
     } catch (err) {
       setRouteError(err.message);
-      console.error("Route error:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleNdviAnalyze = async () => {
-    const center = currentLocation || { latitude: 9.9312, longitude: 76.2673 };
-    const delta = 0.025;
-    const polygon = [
-      [center.latitude - delta, center.longitude - delta],
-      [center.latitude - delta, center.longitude + delta],
-      [center.latitude + delta, center.longitude + delta],
-      [center.latitude + delta, center.longitude - delta],
-    ];
+  // =============================================
+  // Polygon Drawing (click-to-draw)
+  // =============================================
+  const calcArea = (coords) => {
+    if (coords.length < 3) return 0;
+    const R = 6378137;
+    let area = 0;
+    const n = coords.length;
+    for (let i = 0; i < n; i++) {
+      const [lat1, lon1] = coords[i];
+      const [lat2, lon2] = coords[(i + 1) % n];
+      const x1 = R * ((lon1 * Math.PI) / 180) * Math.cos((lat1 * Math.PI) / 180);
+      const y1 = R * ((lat1 * Math.PI) / 180);
+      const x2 = R * ((lon2 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180);
+      const y2 = R * ((lat2 * Math.PI) / 180);
+      area += x1 * y2 - x2 * y1;
+    }
+    return (Math.abs(area) / 2 / 10000).toFixed(2);
+  };
 
-    setShowNdvi(true);
+  const handleStartDrawing = () => {
+    setIsDrawing(true);
+    setDrawingPoints([]);
+    setDrawnPolygon(null);
+    setPolygonAreaHa(null);
+    setAvailableDates([]);
+    setSelectedObservation(null);
+    setNdviResult(null);
+    setNdviError(null);
+  };
+
+  const handlePointAdded = useCallback((point) => {
+    setDrawingPoints((prev) => [...prev, point]);
+  }, []);
+
+  const handleFinishDrawing = () => {
+    if (drawingPoints.length >= 3) {
+      setDrawnPolygon(drawingPoints);
+      setPolygonAreaHa(calcArea(drawingPoints));
+      // Auto-fetch satellite availability after polygon is drawn
+      fetchAvailability(drawingPoints);
+    }
+    setIsDrawing(false);
+    setDrawingPoints([]);
+  };
+
+  const handleClearNdvi = () => {
+    setDrawnPolygon(null);
+    setDrawingPoints([]);
+    setIsDrawing(false);
+    setPolygonAreaHa(null);
+    setAvailableDates([]);
+    setSelectedObservation(null);
+    setNdviResult(null);
+    setNdviError(null);
+  };
+
+  // =============================================
+  // Satellite Availability
+  // =============================================
+  const fetchAvailability = async (polygon) => {
+    setAvailabilityLoading(true);
+    setAvailableDates([]);
+    setSelectedObservation(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/ndvi/availability`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ polygon }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to fetch availability.");
+      setAvailableDates(data.observations || []);
+    } catch (err) {
+      console.error("Availability fetch error:", err);
+      setNdviError("Could not fetch satellite availability: " + err.message);
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
+
+  const handleDateSelected = (dateStr) => {
+    setSelectedObservation(dateStr);
+    setNdviResult(null);
+    setNdviError(null);
+  };
+
+  // =============================================
+  // NDVI Analysis
+  // =============================================
+  const handleNdviAnalyze = async () => {
+    if (!drawnPolygon || drawnPolygon.length < 3 || !selectedObservation) return;
     setNdviLoading(true);
     setNdviError(null);
+    setNdviResult(null);
+
+    // Find the selected observation details
+    const obs = availableDates.find((o) => o.date === selectedObservation);
+
     try {
       const res = await fetch(`${BACKEND_URL}/ndvi/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ polygon }),
+        body: JSON.stringify({
+          polygon: drawnPolygon,
+          date: selectedObservation,
+          source: obs?.source || "auto",
+          scene_id: obs?.scene_id || null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "NDVI analysis failed.");
@@ -146,39 +260,34 @@ export default function App() {
     }
   };
 
+  // =============================================
+  // Voice Recording
+  // =============================================
   const toggleRecording = async () => {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
       setIsRecording(false);
       return;
     }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
       audioChunksRef.current = [];
-
       mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-
       mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
         const formData = new FormData();
         formData.append("file", audioBlob, "recording.wav");
-
         try {
-          const res = await fetch(`${BACKEND_URL}/speech-to-text`, {
-            method: "POST",
-            body: formData,
-          });
+          const res = await fetch(`${BACKEND_URL}/speech-to-text`, { method: "POST", body: formData });
           const data = await res.json();
           if (data.transcript) handleSend(data.transcript);
         } catch (err) {
           console.error("Transcription error:", err);
         }
       };
-
       mediaRecorderRef.current.start();
       setIsRecording(true);
     } catch {
@@ -186,10 +295,13 @@ export default function App() {
     }
   };
 
+  // =============================================
+  // RENDER
+  // =============================================
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 flex items-center justify-center p-3">
       <div className="w-full max-w-lg bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 flex flex-col h-[92vh] overflow-hidden">
-        
+
         {/* Header */}
         <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-white/60">
           <div className="flex items-center gap-2">
@@ -201,70 +313,40 @@ export default function App() {
                 WeatherGPT
                 <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
               </h1>
-              <p className="text-[11px] text-slate-500">Agro-Travel & Atmospheric Intelligence</p>
+              <p className="text-[11px] text-slate-500">Agro-Travel &amp; Atmospheric Intelligence</p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            {/* NDVI Toggle Button */}
-            <button
-              onClick={() => setShowNdvi(!showNdvi)}
-              className={`p-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 transition ${
-                showNdvi
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-              title="Toggle Vegetation (NDVI) Layer"
-            >
-              <Sprout className="w-3.5 h-3.5" />
-              <span>NDVI</span>
-            </button>
-            <button
-              onClick={handleNdviAnalyze}
-              disabled={ndviLoading}
-              className="p-1.5 px-2.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-              title="Analyze vegetation health near the selected location"
-            >
-              {ndviLoading ? "Analyzing..." : "Analyze"}
-            </button>
-
-            {/* Language Selector */}
-            <select
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-              className="text-xs font-semibold bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 outline-none hover:bg-slate-200 transition"
-            >
-              <option value="en">English</option>
-              <option value="ml">Malayalam (മലയാളം)</option>
-              <option value="hi">Hindi (हिन्दी)</option>
-            </select>
-          </div>
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            className="text-xs font-semibold bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 outline-none hover:bg-slate-200 transition"
+          >
+            <option value="en">English</option>
+            <option value="ml">Malayalam</option>
+            <option value="hi">Hindi</option>
+          </select>
         </header>
 
-        {/* Feature Tab Selector */}
+        {/* 3-Tab Selector */}
         <div className="flex border-b border-slate-100 bg-slate-50/70 p-1 gap-1">
-          <button
-            onClick={() => setActiveTab("chat")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-              activeTab === "chat"
-                ? "bg-white text-blue-600 shadow-sm font-semibold"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Chat Assistant
-          </button>
-          <button
-            onClick={() => setActiveTab("route")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-              activeTab === "route"
-                ? "bg-white text-blue-600 shadow-sm font-semibold"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            Route Weather
-          </button>
+          {[
+            { key: "chat", icon: MessageSquare, label: "Chat", color: "blue" },
+            { key: "route", icon: Navigation, label: "Route", color: "blue" },
+            { key: "vegetation", icon: Sprout, label: "Vegetation", color: "emerald" },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-1.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                activeTab === tab.key
+                  ? `bg-white text-${tab.color}-600 shadow-sm font-semibold`
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <tab.icon className="w-3.5 h-3.5" />
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Alert Banner */}
@@ -275,72 +357,48 @@ export default function App() {
           </div>
         )}
 
-        {/* Chat Tab Panel */}
-        {activeTab === "chat" ? (
+        {/* =========== CHAT TAB =========== */}
+        {activeTab === "chat" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((m, idx) => (
-              <div
-                key={idx}
-                className={`flex items-start gap-2 ${
-                  m.sender === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
+              <div key={idx} className={`flex items-start gap-2 ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                 {m.sender === "bot" && (
-                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5 text-[11px] font-bold">
-                    AI
-                  </div>
+                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5 text-[11px] font-bold">AI</div>
                 )}
-                <div
-                  className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm ${
-                    m.sender === "user"
-                      ? "bg-blue-600 text-white rounded-br-none"
-                      : "bg-slate-100 text-slate-800 rounded-bl-none border border-slate-200/60"
-                  }`}
-                >
+                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-sm ${
+                  m.sender === "user"
+                    ? "bg-blue-600 text-white rounded-br-none"
+                    : "bg-slate-100 text-slate-800 rounded-bl-none border border-slate-200/60"
+                }`}>
                   {m.text}
                 </div>
                 {m.sender === "bot" && (
-                  <button
-                    onClick={() => speak(m.text)}
-                    className="text-slate-400 hover:text-slate-600 p-0.5"
-                  >
+                  <button onClick={() => speak(m.text)} className="text-slate-400 hover:text-slate-600 p-0.5">
                     <Volume2 className="w-3 h-3" />
                   </button>
                 )}
               </div>
             ))}
-            {loading && (
-              <div className="text-xs text-slate-400 italic pl-8">Analyzing atmospheric conditions...</div>
-            )}
+            {loading && <div className="text-xs text-slate-400 italic pl-8">Analyzing atmospheric conditions...</div>}
             <div ref={chatEndRef} />
           </div>
-        ) : (
-          /* Route Weather Tab Panel */
+        )}
+
+        {/* =========== ROUTE TAB =========== */}
+        {activeTab === "route" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <form onSubmit={handleRouteSearch} className="space-y-2">
-              <input
-                type="text"
-                value={origin}
-                onChange={(e) => setOrigin(e.target.value)}
+              <input type="text" value={origin} onChange={(e) => setOrigin(e.target.value)}
                 placeholder="Start City (e.g., Kochi)"
-                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-blue-500"
-              />
-              <input
-                type="text"
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
+                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-blue-500" />
+              <input type="text" value={destination} onChange={(e) => setDestination(e.target.value)}
                 placeholder="Destination City (e.g., Munnar)"
-                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-blue-500"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition"
-              >
+                className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-blue-500" />
+              <button type="submit" disabled={loading}
+                className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition disabled:opacity-50">
                 {loading ? "Calculating Route..." : "Analyze Route Forecast"}
               </button>
             </form>
-
             {routeWeather && (
               <div className="p-3 bg-blue-50/70 rounded-2xl border border-blue-100 text-xs space-y-2">
                 <p className="font-semibold text-blue-900">Route Analysis Ready</p>
@@ -348,7 +406,7 @@ export default function App() {
                 {routeWeather.summary?.warnings?.length > 0 && (
                   <div className="rounded-lg bg-amber-50 p-2 text-amber-800">
                     <p className="font-semibold">Weather warnings</p>
-                    {routeWeather.summary.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+                    {routeWeather.summary.warnings.map((w) => <p key={w}>{w}</p>)}
                   </div>
                 )}
                 <p className="font-semibold text-blue-900">Point-to-point forecast</p>
@@ -361,8 +419,7 @@ export default function App() {
                           <span>{point.city_name || `Point ${index + 1}`}</span>
                           <span>{weather.condition || "No forecast"}</span>
                         </div>
-                        <div>{weather.temperature ?? "-"} C · {weather.precipitation ?? "-"} mm rain · {weather.wind_speed ?? "-"} km/h wind</div>
-                        <div>Arrival: {point.arrival_time ? new Date(point.arrival_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"}</div>
+                        <div>{weather.temperature ?? "-"} °C · {weather.precipitation ?? "-"} mm · {weather.wind_speed ?? "-"} km/h</div>
                       </div>
                     );
                   })}
@@ -373,71 +430,136 @@ export default function App() {
           </div>
         )}
 
-        {/* Map Panel (Always visible, dynamically updates) */}
-        <div className="p-3 pt-0">
+        {/* =========== VEGETATION TAB =========== */}
+        {activeTab === "vegetation" && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Drawing Controls */}
+            <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/60 space-y-2.5">
+              <p className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5">
+                <Sprout className="w-4 h-4" /> Vegetation Health Analysis
+              </p>
 
-                  {(ndviResult || ndviError) && (
-                    <div className="mx-3 mb-3 p-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 text-xs">
-                      {ndviError ? (
-                        <p className="text-rose-600">NDVI: {ndviError}</p>
-                      ) : (
-                        <>
-                          <p className="font-semibold text-emerald-900">Vegetation analysis: {ndviResult.health}</p>
-                          <p className="text-slate-600">Average NDVI: {ndviResult.average_ndvi ?? "No data"} · Area: {ndviResult.area_hectares} ha</p>
-                        </>
-                      )}
-                    </div>
-                  )}
+              {/* Step 1: Draw polygon */}
+              {!drawnPolygon && !isDrawing && (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-600">
+                    Click <strong>"Start Drawing"</strong>, then click on the map to place polygon points (min 3). Click <strong>"Finish"</strong> when done.
+                  </p>
+                  <button onClick={handleStartDrawing}
+                    className="w-full py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition flex items-center justify-center gap-1.5">
+                    <MousePointer2 className="w-3.5 h-3.5" /> Start Drawing Polygon
+                  </button>
+                </div>
+              )}
+
+              {/* Step 2: Currently drawing */}
+              {isDrawing && (
+                <div className="space-y-2">
+                  <p className="text-xs text-emerald-700 font-medium animate-pulse">
+                    🖊️ Click on the map to add points ({drawingPoints.length} placed)
+                  </p>
+                  <div className="flex gap-2">
+                    <button onClick={handleFinishDrawing} disabled={drawingPoints.length < 3}
+                      className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition disabled:opacity-40 flex items-center justify-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" /> Finish Polygon
+                    </button>
+                    <button onClick={handleClearNdvi}
+                      className="p-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition border border-slate-200">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Polygon complete — show area + clear */}
+              {drawnPolygon && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-600">✅ Polygon selected</span>
+                    <span className="text-[10px] text-slate-400 ml-2">{drawnPolygon.length} vertices</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-700">{polygonAreaHa} ha</span>
+                    <button onClick={handleClearNdvi}
+                      className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition border border-slate-200"
+                      title="Clear polygon">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Step 4: Satellite Availability Calendar (auto-shows after polygon) */}
+            {drawnPolygon && (
+              <SatelliteCalendar
+                observations={availableDates}
+                selectedDate={selectedObservation}
+                onDateSelected={handleDateSelected}
+                loading={availabilityLoading}
+              />
+            )}
+
+            {/* Step 5: Analyze button (only after a date is selected) */}
+            {drawnPolygon && selectedObservation && !ndviResult && (
+              <button onClick={handleNdviAnalyze} disabled={ndviLoading}
+                className="w-full py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition disabled:opacity-40">
+                {ndviLoading ? "🛰️ Fetching satellite data..." : "📊 Analyze Vegetation Health"}
+              </button>
+            )}
+
+            {/* Error */}
+            {ndviError && (
+              <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-700">
+                ❌ {ndviError}
+              </div>
+            )}
+
+            {/* Loading */}
+            {ndviLoading && (
+              <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-xs text-emerald-700 text-center animate-pulse">
+                🛰️ Analyzing satellite data...<br />
+                <span className="text-[10px] text-slate-500">This may take 20–60 seconds.</span>
+              </div>
+            )}
+
+            {/* Step 6: Full NDVI Report */}
+            <NDVIReport result={ndviResult} />
+          </div>
+        )}
+
+        {/* =========== MAP (always visible) =========== */}
+        <div className="p-3 pt-0">
           <WeatherMap
             location={currentLocation}
             routePath={routePath}
-            showNdvi={showNdvi}
             ndviResult={ndviResult}
             routePoints={routeWeather?.route_points}
+            drawnPolygon={drawnPolygon}
+            drawingPoints={drawingPoints}
+            isDrawing={isDrawing}
+            onPointAdded={handlePointAdded}
           />
         </div>
 
-        {/* Chat Input Bar (Only visible when activeTab === "chat") */}
+        {/* =========== CHAT INPUT (only on chat tab) =========== */}
         {activeTab === "chat" && (
           <div className="p-3 border-t border-slate-100 bg-white/60">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSend();
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
+            <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex items-center gap-2">
+              <input type="text" value={input} onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about rain, temperature, or travel advice..."
-                className="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
-
-              <button
-                type="button"
-                onClick={toggleRecording}
-                className={`p-2 rounded-xl transition ${
-                  isRecording
-                    ? "bg-rose-500 text-white animate-pulse"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
-                }`}
-              >
+                className="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+              <button type="button" onClick={toggleRecording}
+                className={`p-2 rounded-xl transition ${isRecording ? "bg-rose-500 text-white animate-pulse" : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"}`}>
                 {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
-
-              <button
-                type="submit"
-                disabled={loading || !input.trim()}
-                className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
-              >
+              <button type="submit" disabled={loading || !input.trim()}
+                className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition disabled:opacity-50">
                 <Send className="w-4 h-4" />
               </button>
             </form>
           </div>
         )}
-
       </div>
     </div>
   );
