@@ -196,17 +196,28 @@ _NORMALIZE_MAP: dict[str, str] = {
 _FORECAST_WORDS = {
     "forecast", "tomorrow", "tommorrow", "next week", "next few days",
     "coming days", "this week", "weekend", "week", "days ahead",
+    "will it", "going to", "will there", "chance of", "expected to",
+    "likely to", "predict", "prediction",
 }
 _RAIN_WORDS = {
     "rain", "raining", "rainfall", "pour", "pouring", "drizzle",
-    "drizzling", "shower", "storm", "flood", "precipitation",
+    "drizzling", "shower", "storm", "flood", "precipitation", "rainy",
 }
 _TEMP_WORDS = {
     "temperature", "temp", "hot", "cold", "heat", "cool", "warm",
-    "feels like", "chilly", "freezing", "boiling",
+    "feels like", "chilly", "freezing", "boiling", "degree", "celsius",
 }
-_WIND_WORDS = {"wind", "windy", "gust", "breeze", "gale"}
-_HUMIDITY_WORDS = {"humidity", "humid", "muggy", "damp", "moisture"}
+_WIND_WORDS = {"wind", "windy", "gust", "breeze", "gale", "breezy"}
+_HUMIDITY_WORDS = {"humidity", "humid", "muggy", "damp", "moisture", "sticky"}
+
+# Future-tense phrases — upgrade rain/temp/wind intent to forecast
+_FUTURE_PATTERNS = [
+    r"\bwill\s+it\b",
+    r"\bgoing\s+to\b",
+    r"\bwill\s+there\s+be\b",
+    r"\bchance\s+of\b",
+    r"\bexpect(ed)?\b",
+]
 
 _TIME_MAP = {
     "tomorrow": "tomorrow",
@@ -274,13 +285,17 @@ def _understand_query_fallback(question: str) -> dict:
     """Keyword/regex-based fallback for when the LLM is unavailable."""
     normalised = _normalize(question).lower().strip()
 
+    # Detect if the question uses future-tense phrasing
+    is_future = any(re.search(p, normalised) for p in _FUTURE_PATTERNS)
+
     # --- Intent detection ---
     if any(w in normalised for w in _FORECAST_WORDS):
         intent = "forecast"
     elif any(w in normalised for w in _RAIN_WORDS):
-        intent = "rain"
+        # "will it rain" → forecast; "is it raining" → rain (current)
+        intent = "forecast" if is_future else "rain"
     elif any(w in normalised for w in _TEMP_WORDS):
-        intent = "temperature"
+        intent = "forecast" if is_future else "temperature"
     elif any(w in normalised for w in _WIND_WORDS):
         intent = "wind"
     elif any(w in normalised for w in _HUMIDITY_WORDS):

@@ -31,6 +31,14 @@ _ABOUT = {
 
 _FAREWELLS = {"bye", "goodbye", "see you", "cya", "take care", "later"}
 
+# Follow-up phrases that should pass through to weather NLP, not be caught as chit-chat
+_FOLLOWUP_HINTS = {
+    "more", "tell more", "tell me more", "elaborate", "explain",
+    "details", "more details", "what else", "and what", "anything else",
+    "more info", "more information", "give more", "more about",
+    "expand", "brief me", "brief", "summary", "summarize",
+}
+
 
 def _classify_message(text: str) -> str | None:
     """
@@ -38,6 +46,11 @@ def _classify_message(text: str) -> str | None:
     small-talk / off-topic query, otherwise returns None (proceed to NLP).
     """
     t = text.lower().strip().rstrip("!.,?")
+
+    # Never intercept follow-up/elaboration requests — let NLP handle them
+    if t in _FOLLOWUP_HINTS or any(t.startswith(h) for h in _FOLLOWUP_HINTS):
+        return None
+
     if t in _GREETINGS or any(t.startswith(g) for g in _GREETINGS):
         return "greeting"
     if t in _THANKS:
@@ -50,7 +63,7 @@ def _classify_message(text: str) -> str | None:
     weather_hints = {
         "weather", "rain", "temperature", "wind", "humidity", "forecast",
         "hot", "cold", "sunny", "cloudy", "storm", "flood", "snow", "climate",
-        "city", "today", "tomorrow", "week",
+        "city", "today", "tomorrow", "week", "more", "tell",
     }
     words = set(t.split())
     if len(words) <= 3 and not words.intersection(weather_hints):
@@ -105,39 +118,48 @@ def _small_talk_reply(category: str, question: str, lang: str) -> str:
 def _template_answer(query: dict, weather_data: dict, city: str) -> str:
     """
     Rule-based template answer used as a final fallback when the LLM is
-    unavailable AND translation has already been applied upstream.
+    unavailable. Uses human-friendly language instead of raw numbers.
     """
     if query["intent"] == "forecast":
-        # For "tomorrow" pick index 1; for "weekend" pick index 5 (Sat); else index 0
         if query["time"] == "tomorrow" and len(weather_data) > 1:
             day = weather_data[1]
         elif query["time"] == "weekend" and len(weather_data) > 5:
             day = weather_data[5]
         else:
             day = weather_data[0]
+
+        rain_mm = day.get("rain", 0) or 0
+        rain_str = f"{rain_mm} mm of rain expected" if rain_mm > 0 else "no rain expected"
         return (
-            f"In {city} on {day['date']}, {day['condition']} is expected, "
-            f"with temperatures from {day['min_temperature']} to "
-            f"{day['max_temperature']} °C and {day['rain']} mm of rain."
+            f"In {city} on {day['date']}: {day['condition']}, "
+            f"temperatures {day['min_temperature']}–{day['max_temperature']} °C, {rain_str}."
         )
 
     if query["weather_variable"] == "temperature":
-        return f"The current temperature in {city} is {weather_data['temperature']} °C."
+        temp = weather_data.get("temperature", "?")
+        condition = weather_data.get("condition", "")
+        return f"It is currently {temp} °C in {city} ({condition})."
 
     if query["weather_variable"] == "rain":
-        return f"In {city}, current precipitation is {weather_data['precipitation']} mm."
+        precip = weather_data.get("precipitation", 0) or 0
+        if precip == 0:
+            return f"It is not currently raining in {city} (precipitation: 0 mm)."
+        return f"It is raining in {city} — current precipitation is {precip} mm."
 
     if query["weather_variable"] == "wind":
-        return f"The current wind speed in {city} is {weather_data['wind_speed']} km/h."
+        return f"The wind speed in {city} is currently {weather_data.get('wind_speed', '?')} km/h."
 
     if query["weather_variable"] == "humidity":
-        return f"The current humidity in {city} is {weather_data['humidity']}%."
+        return f"The humidity in {city} is currently {weather_data.get('humidity', '?')}%."
 
+    # General / current_weather
+    precip = weather_data.get("precipitation", 0) or 0
+    rain_str = f"{precip} mm precipitation" if precip > 0 else "no precipitation"
     return (
-        f"In {city}, the current condition is {weather_data['condition']}, "
-        f"temperature is {weather_data['temperature']} °C, humidity is "
-        f"{weather_data['humidity']}%, precipitation is {weather_data['precipitation']} mm, "
-        f"and wind speed is {weather_data['wind_speed']} km/h."
+        f"In {city}: {weather_data.get('condition', 'N/A')}, "
+        f"{weather_data.get('temperature', '?')} °C, "
+        f"humidity {weather_data.get('humidity', '?')}%, "
+        f"{rain_str}, wind {weather_data.get('wind_speed', '?')} km/h."
     )
 
 
@@ -184,6 +206,7 @@ def chat(question: str, lang: str = "en"):
         city=location["city"],
         question=question,
         lang=lang,
+        intent=query["intent"],
     )
 
     # Fall back to template answer if LLM is unavailable
