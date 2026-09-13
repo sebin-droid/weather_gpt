@@ -15,7 +15,7 @@ Flow (POST):
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -35,9 +35,9 @@ router = APIRouter()
 class HistoryMessage(BaseModel):
     role: str        # "user" | "assistant"
     content: str
-    location: str | None = None      # optional: city resolved in that turn
-    weather_data: dict | None = None  # optional: weather returned in that turn
-    context: dict | None = None       # optional: resolved context in that turn
+    location: Optional[str] = None
+    weather_data: Optional[Any] = None   # dict (current) OR list (forecast)
+    context: Optional[Any] = None
 
 
 class ChatRequest(BaseModel):
